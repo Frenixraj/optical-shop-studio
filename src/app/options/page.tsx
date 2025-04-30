@@ -4,20 +4,36 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { FilePlus2, Search, UserPlus, LogOut } from "lucide-react";
+import { signOut } from "firebase/auth"; // Import Firebase signOut
 
+import { auth } from "@/lib/firebase"; // Import Firebase Auth instance
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import useAuth from '@/hooks/useAuth'; // Assuming useAuth hook handles redirection if not logged in
+import useAuth, { AuthLoadingScreen } from '@/hooks/useAuth'; // Import AuthLoadingScreen
 import VisionClearLogo from "@/components/icons/VisionClearLogo"; // Import the logo
+import { useToast } from "@/hooks/use-toast";
 
 export default function OptionsPage() {
-  useAuth(); // Protect the route
+  const isLoadingAuth = useAuth(); // Protect the route and get loading state
   const router = useRouter();
+  const { toast } = useToast();
 
-  const handleLogout = () => {
-    localStorage.removeItem('isLoggedIn');
-    router.push('/login');
+  const handleLogout = async () => {
+    try {
+        await signOut(auth);
+        toast({ title: "Logged Out", description: "You have been successfully logged out." });
+        router.push('/login'); // Redirect to login after sign out
+    } catch (error) {
+        console.error("Logout Error:", error);
+        toast({ title: "Logout Failed", description: "Could not log out. Please try again.", variant: "destructive"});
+    }
   };
+
+   // Show loading screen while authentication check is in progress
+   if (isLoadingAuth) {
+     return <AuthLoadingScreen />;
+   }
+
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-secondary p-4">

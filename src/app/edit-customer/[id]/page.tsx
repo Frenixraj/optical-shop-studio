@@ -9,7 +9,7 @@ import * as z from "zod";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon, Save, Trash2, Loader2 } from "lucide-react";
 
-import useAuth from '@/hooks/useAuth';
+import useAuth, { AuthLoadingScreen } from '@/hooks/useAuth'; // Import AuthLoadingScreen
 import PageWrapper from "@/components/layout/PageWrapper";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,12 +83,12 @@ type CustomerFormValues = z.infer<typeof customerSchema>;
 // --- Component ---
 
 export default function EditCustomerPage() {
-  useAuth();
+  const isLoadingAuth = useAuth(); // Protect the route and get loading state
   const router = useRouter();
   const params = useParams();
   const customerId = params.id as string; // Firestore ID is string
   const { toast } = useToast();
-  const [isLoading, setIsLoading] = React.useState(true);
+  const [isLoadingData, setIsLoadingData] = React.useState(true); // Renamed isLoading
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [formDataForConfirmation, setFormDataForConfirmation] = React.useState<CustomerFormValues | null>(null);
@@ -109,13 +109,11 @@ export default function EditCustomerPage() {
 
     // Fetch customer data on mount
     React.useEffect(() => {
+        // Don't fetch if auth is still loading or customerId is missing
+        if (isLoadingAuth || !customerId) return;
+
         const fetchAndSetData = async () => {
-             if (!customerId) {
-                toast({ title: "Error", description: "Invalid customer ID.", variant: "destructive" });
-                router.push('/search-customers');
-                return;
-            }
-            setIsLoading(true);
+             setIsLoadingData(true);
             try {
                 const customerData: FullCustomerData | null = await getCustomerDetails(customerId);
                 if (!customerData) {
@@ -155,13 +153,13 @@ export default function EditCustomerPage() {
                 toast({ title: "Error", description: "Could not load customer data.", variant: "destructive" });
                 router.push('/search-customers');
             } finally {
-                setIsLoading(false);
+                setIsLoadingData(false);
             }
         };
 
         fetchAndSetData();
          // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [customerId, router, toast, form.reset]); // form.reset added to dependency array
+    }, [customerId, router, toast, form.reset, isLoadingAuth]); // Added isLoadingAuth dependency
 
 
   // --- Form Submission ---
@@ -268,28 +266,10 @@ export default function EditCustomerPage() {
     };
 
   // --- Render ---
-  if (isLoading) {
-    return (
-        <PageWrapper title="Edit Customer">
-            <div className="space-y-8">
-                <Card>
-                    <CardHeader><Skeleton className="h-6 w-1/2" /></CardHeader>
-                    <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <Skeleton className="h-10 w-full" />
-                        <Skeleton className="h-10 w-full" />
-                        <Skeleton className="h-10 w-full" />
-                    </CardContent>
-                </Card>
-                 <Card>
-                    <CardHeader><Skeleton className="h-6 w-1/4" /></CardHeader>
-                    <CardContent><Skeleton className="h-24 w-full" /></CardContent>
-                    {/* Footer adjusted */}
-                    <CardFooter className="flex justify-between"><Skeleton className="h-10 w-24" /><Skeleton className="h-10 w-24" /></CardFooter>
-                </Card>
-            </div>
-        </PageWrapper>
-    );
-  }
+   // Show loading screen while authentication or data fetching is in progress
+   if (isLoadingAuth || isLoadingData) {
+     return <AuthLoadingScreen />; // Or a more specific loading indicator
+   }
 
   return (
     <PageWrapper title={`Edit Customer: ${form.getValues('customerName') || customerId}`}>

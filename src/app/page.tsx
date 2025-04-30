@@ -1,7 +1,8 @@
-import { redirect } from 'next/navigation';
 
+// Redirect logic is now handled by the useAuth hook globally or on specific page layouts.
+// This page can be used for a landing page or kept minimal.
 export default function Home() {
-  // Redirect to the login page by default
-  redirect('/login');
-  return null; // Return null as redirect will handle navigation
+  // You can optionally add a loading indicator or basic message here,
+  // but the primary redirection logic lives in useAuth.
+  return null; // Render nothing, as redirection will occur via useAuth
 }

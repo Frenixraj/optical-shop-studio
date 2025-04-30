@@ -6,7 +6,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import { Loader2, Printer, ArrowLeft } from 'lucide-react';
 
-import useAuth from '@/hooks/useAuth';
+import useAuth, { AuthLoadingScreen } from '@/hooks/useAuth'; // Import AuthLoadingScreen
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 // Import Firestore functions and types
@@ -26,24 +26,29 @@ interface CustomerPrintData {
 
 
 export default function PrintPage() {
-  useAuth();
+  const isLoadingAuth = useAuth(); // Protect the route and get loading state
   const searchParams = useSearchParams();
   const router = useRouter();
   const { toast } = useToast();
   const invoiceId = searchParams.get('invoiceId'); // String ID from Firestore
   const customerId = searchParams.get('customerId'); // String ID from Firestore
   const [printData, setPrintData] = React.useState<CustomerPrintData | null>(null);
-  const [isLoading, setIsLoading] = React.useState(true);
+  const [isLoadingData, setIsLoadingData] = React.useState(true); // Renamed isLoading
 
   React.useEffect(() => {
-    const fetchData = async () => {
-      if (!invoiceId || !customerId) {
-        toast({ title: "Error", description: "Missing invoice or customer ID for printing.", variant: "destructive" });
-        router.push('/options');
+    // Don't fetch if auth is still loading or IDs are missing
+     if (isLoadingAuth || !invoiceId || !customerId) {
+         // Handle missing IDs potentially earlier if needed
+         if (!isLoadingAuth && (!invoiceId || !customerId)) {
+            toast({ title: "Error", description: "Missing invoice or customer ID for printing.", variant: "destructive" });
+            router.push('/options');
+         }
         return;
       }
 
-      setIsLoading(true);
+
+    const fetchData = async () => {
+      setIsLoadingData(true);
       try {
         // Fetch full customer details using Firestore function
         const customerDetails: FullCustomerData | null = await getCustomerDetails(customerId);
@@ -93,13 +98,13 @@ export default function PrintPage() {
              router.push('/search-customers');
          }
       } finally {
-        setIsLoading(false);
+        setIsLoadingData(false);
       }
     };
 
     fetchData();
      // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoiceId, customerId, router, toast]); // Dependencies are string IDs
+  }, [invoiceId, customerId, router, toast, isLoadingAuth]); // Added isLoadingAuth dependency
 
   const handlePrint = () => {
     window.print();
@@ -115,30 +120,11 @@ export default function PrintPage() {
     };
 
   // --- Loading State ---
-  if (isLoading) {
-    return (
-      <div className="p-8 print:p-0">
-         <div className="flex justify-end mb-4 print:hidden">
-                <Skeleton className="h-10 w-24" />
-                <Skeleton className="h-10 w-24 ml-2" />
-         </div>
-        <div className="max-w-4xl mx-auto bg-white p-8 border border-gray-300 shadow-lg print:shadow-none print:border-none">
-          <Skeleton className="h-16 w-1/3 mb-8" /> {/* Logo Area */}
-          <Skeleton className="h-6 w-1/4 mb-4" /> {/* Invoice Title */}
-           <div className="grid grid-cols-2 gap-4 mb-6">
-               <Skeleton className="h-4 w-3/4" />
-               <Skeleton className="h-4 w-3/4 justify-self-end" />
-               <Skeleton className="h-4 w-full" />
-               <Skeleton className="h-4 w-full justify-self-end" />
-            </div>
-            <Skeleton className="h-40 w-full mb-6" /> {/* Product Table */}
-            <Skeleton className="h-20 w-1/2 ml-auto mb-8" /> {/* Totals */}
-            <Skeleton className="h-6 w-1/4 mb-4" /> {/* Prescription Title */}
-             <Skeleton className="h-24 w-full" /> {/* Prescription Table */}
-        </div>
-      </div>
-    );
-  }
+   // Show loading screen while authentication or data fetching is in progress
+   if (isLoadingAuth || isLoadingData) {
+     return <AuthLoadingScreen />; // Or a more specific loading indicator
+   }
+
 
   // --- No Data State ---
    if (!printData || !printData.invoice) {

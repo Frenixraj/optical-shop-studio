@@ -1,7 +1,7 @@
 
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-// import { getAuth } from "firebase/auth"; // Keep commented unless Firebase Auth is needed
+import { getAuth } from "firebase/auth"; // Import Firebase Auth
 
 // Your web app's Firebase configuration
 // Use environment variables for sensitive information
@@ -23,6 +23,6 @@ if (!getApps().length) {
 }
 
 const db = getFirestore(app);
-// const auth = getAuth(app); // Keep commented unless Firebase Auth is needed
+const auth = getAuth(app); // Initialize Firebase Auth
 
-export { db /*, auth */ }; // Export Firestore instance (and Auth if needed)
+export { db, auth }; // Export Firestore instance and Auth

@@ -9,7 +9,7 @@ import * as z from "zod";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon, Save, Trash2, PlusCircle } from "lucide-react";
 
-import useAuth from '@/hooks/useAuth';
+import useAuth, { AuthLoadingScreen } from '@/hooks/useAuth'; // Import AuthLoadingScreen
 import PageWrapper from "@/components/layout/PageWrapper";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -105,7 +105,7 @@ type CustomerFormValues = z.infer<typeof customerSchema>;
 // --- Component ---
 
 export default function AddCustomerPage() {
-  useAuth(); // Protect the route
+  const isLoadingAuth = useAuth(); // Protect the route and get loading state
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -316,6 +316,11 @@ export default function AddCustomerPage() {
 
 
   // --- Render ---
+   // Show loading screen while authentication check is in progress
+   if (isLoadingAuth) {
+     return <AuthLoadingScreen />;
+   }
+
   return (
     <PageWrapper title="Add New Customer & Details">
       <Form {...form}>

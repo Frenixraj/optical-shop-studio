@@ -6,7 +6,7 @@ import { useRouter, useParams } from "next/navigation";
 import { format } from "date-fns";
 import { Loader2, Edit, Trash2, Printer } from "lucide-react"; // Added Printer
 
-import useAuth from '@/hooks/useAuth';
+import useAuth, { AuthLoadingScreen } from '@/hooks/useAuth'; // Import AuthLoadingScreen
 import PageWrapper from "@/components/layout/PageWrapper";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,23 +47,21 @@ import {
 // Interfaces for detailed data are imported from db.ts
 
 export default function ViewCustomerPage() {
-  useAuth();
+  const isLoadingAuth = useAuth(); // Protect the route and get loading state
   const router = useRouter();
   const params = useParams();
   const customerId = params.id as string; // Firestore ID is string
   const { toast } = useToast();
   const [customerData, setCustomerData] = React.useState<FullCustomerData | null>(null);
-  const [isLoading, setIsLoading] = React.useState(true);
+  const [isLoadingData, setIsLoadingData] = React.useState(true); // Renamed isLoading
   const [isDeleting, setIsDeleting] = React.useState(false);
 
   React.useEffect(() => {
+     // Don't fetch if auth is still loading or customerId is missing
+    if (isLoadingAuth || !customerId) return;
+
     const fetchData = async () => {
-      if (!customerId) { // Basic check for non-empty ID
-        toast({ title: "Error", description: "Invalid customer ID provided.", variant: "destructive" });
-        router.push('/search-customers');
-        return;
-      }
-      setIsLoading(true);
+      setIsLoadingData(true);
       try {
         // Fetch data using Firestore function
         const data: FullCustomerData | null = await getCustomerDetails(customerId);
@@ -80,13 +78,13 @@ export default function ViewCustomerPage() {
         toast({ title: "Error", description: `Could not load customer data: ${errorMessage}`, variant: "destructive" });
         router.push('/search-customers');
       } finally {
-        setIsLoading(false);
+        setIsLoadingData(false);
       }
     };
 
     fetchData();
      // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerId, router, toast]); // customerId is string
+  }, [customerId, router, toast, isLoadingAuth]); // Added isLoadingAuth dependency
 
    const handleDeleteCustomer = async () => {
         if (!customerId) return; // Safety check
@@ -109,27 +107,11 @@ export default function ViewCustomerPage() {
         router.push(`/print?invoiceId=${invoiceId}&customerId=${customerId}`);
     };
 
+    // Show loading screen while authentication or data fetching is in progress
+   if (isLoadingAuth || isLoadingData) {
+     return <AuthLoadingScreen />; // Or a more specific loading indicator
+   }
 
-  if (isLoading) {
-    return (
-      <PageWrapper title="Loading Customer Details...">
-        <div className="space-y-6">
-          <Card>
-            <CardHeader><Skeleton className="h-6 w-1/2" /></CardHeader>
-            <CardContent><Skeleton className="h-10 w-full" /></CardContent>
-          </Card>
-          <Card>
-            <CardHeader><Skeleton className="h-6 w-1/4" /></CardHeader>
-            <CardContent><Skeleton className="h-24 w-full" /></CardContent>
-          </Card>
-           <Card>
-            <CardHeader><Skeleton className="h-6 w-1/3" /></CardHeader>
-            <CardContent><Skeleton className="h-32 w-full" /></CardContent>
-          </Card>
-        </div>
-      </PageWrapper>
-    );
-  }
 
   if (!customerData) {
      // This case should ideally be handled by the redirect in useEffect, but added for safety

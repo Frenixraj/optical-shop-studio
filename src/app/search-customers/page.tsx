@@ -9,7 +9,7 @@ import * as z from "zod";
 import { Search, Trash2, Edit, Eye, Download, Calendar as CalendarIcon, X } from "lucide-react";
 import { format } from "date-fns";
 
-import useAuth from '@/hooks/useAuth';
+import useAuth, { AuthLoadingScreen } from '@/hooks/useAuth'; // Import AuthLoadingScreen
 import PageWrapper from "@/components/layout/PageWrapper";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -116,11 +116,11 @@ interface FullCustomerDataForExcel {
 
 // --- Component ---
 export default function SearchCustomersPage() {
-  useAuth(); // Protect the route
+  const isLoadingAuth = useAuth(); // Protect the route and get loading state
   const router = useRouter();
   const { toast } = useToast();
   const [searchResults, setSearchResults] = React.useState<CustomerSearchResult[]>([]);
-  const [isLoading, setIsLoading] = React.useState(false);
+  const [isLoadingData, setIsLoadingData] = React.useState(false); // Renamed isLoading
   const [isDeleting, setIsDeleting] = React.useState<string | null>(null); // Store string ID of customer being deleted
   const [isExporting, setIsExporting] = React.useState(false);
 
@@ -135,7 +135,7 @@ export default function SearchCustomersPage() {
   });
 
   const onSubmit = async (data: SearchFormValues) => {
-    setIsLoading(true);
+    setIsLoadingData(true);
     setSearchResults([]); // Clear previous results
     try {
        // Prepare search criteria (pass directly to Firestore function)
@@ -157,7 +157,7 @@ export default function SearchCustomersPage() {
       const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
       toast({ title: "Error", description: `Failed to search for customers: ${errorMessage}`, variant: "destructive" });
     } finally {
-      setIsLoading(false);
+      setIsLoadingData(false);
     }
   };
 
@@ -267,6 +267,11 @@ export default function SearchCustomersPage() {
     { value: 10, label: 'October' }, { value: 11, label: 'November' }, { value: 12, label: 'December' }
   ];
 
+   // Show loading screen while authentication check is in progress
+   if (isLoadingAuth) {
+     return <AuthLoadingScreen />;
+   }
+
 
   return (
     <PageWrapper title="Search Customers">
@@ -322,9 +327,9 @@ export default function SearchCustomersPage() {
                                 <PopoverContent className="w-auto p-0" align="start">
                                 <Calendar
                                     mode="single"
-                                    selected={field.value}
+                                    selected={field.value ?? undefined} // Pass undefined instead of null
                                     onSelect={(date) => {
-                                        field.onChange(date);
+                                        field.onChange(date ?? null); // Handle undefined from Calendar
                                         // Optionally clear month/year if a specific date is selected
                                         // form.setValue('searchMonth', null);
                                         // form.setValue('searchYear', null);
@@ -402,11 +407,11 @@ export default function SearchCustomersPage() {
                     />
                     {/* Search and Clear Buttons */}
                     <div className="flex items-end gap-2 md:col-span-2">
-                        <Button type="submit" disabled={isLoading} className="flex-grow sm:flex-grow-0">
+                        <Button type="submit" disabled={isLoadingData} className="flex-grow sm:flex-grow-0">
                             <Search className="mr-2 h-5 w-5" />
-                            {isLoading ? "Searching..." : "Search"}
+                            {isLoadingData ? "Searching..." : "Search"}
                         </Button>
-                         <Button type="button" variant="outline" onClick={handleClearFilters} disabled={isLoading}>
+                         <Button type="button" variant="outline" onClick={handleClearFilters} disabled={isLoadingData}>
                             <X className="mr-2 h-4 w-4" /> Clear
                         </Button>
                     </div>
@@ -420,7 +425,7 @@ export default function SearchCustomersPage() {
         </CardContent>
       </Card>
 
-      {isLoading && (
+      {isLoadingData && (
          <Card>
             <CardHeader>
                 <Skeleton className="h-6 w-1/4" />
@@ -435,7 +440,7 @@ export default function SearchCustomersPage() {
          </Card>
       )}
 
-      {!isLoading && searchResults.length > 0 && (
+      {!isLoadingData && searchResults.length > 0 && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Search Results ({searchResults.length})</CardTitle>
@@ -515,7 +520,7 @@ export default function SearchCustomersPage() {
         </Card>
       )}
 
-      {!isLoading && form.formState.isSubmitted && searchResults.length === 0 && (
+      {!isLoadingData && form.formState.isSubmitted && searchResults.length === 0 && (
          <Card>
             <CardContent className="pt-6 text-center text-muted-foreground">
                 No customers found matching the specified criteria.
