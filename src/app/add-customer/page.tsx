@@ -4,10 +4,10 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Save, Trash2, PlusCircle } from "lucide-react";
+import { Calendar as CalendarIcon, Save } from "lucide-react";
 
 import useAuth from '@/hooks/useAuth';
 import PageWrapper from "@/components/layout/PageWrapper";
@@ -15,8 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Calendar } from "@/components/ui/calendar";
-import { Textarea } from "@/components/ui/textarea"; // Added for transaction description
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Added for transaction type
 import {
   Popover,
   PopoverContent,
@@ -30,14 +28,6 @@ import {
   CardDescription,
   CardFooter,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   Form,
   FormControl,
@@ -59,17 +49,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { saveCustomer, savePrescription, saveTransaction } from "@/lib/db"; // Placeholder DB functions
+import { saveCustomer, savePrescription } from "@/lib/db"; // Updated imports
 import { exportCustomerToExcel } from "@/lib/excel"; // Placeholder Excel function
 
 // --- Zod Schema Definition ---
-
-const transactionSchema = z.object({
-    date: z.date({ required_error: "Date is required." }),
-    description: z.string().min(1, "Description is required"),
-    amount: z.coerce.number().positive("Amount must be positive"),
-    type: z.enum(["credit", "debit"], { required_error: "Transaction type is required." }),
-});
+// Simplified schema: Customer Info + Prescription Only
 
 const customerSchema = z.object({
   // No Bill Number
@@ -77,7 +61,7 @@ const customerSchema = z.object({
   customerName: z.string().min(1, "Customer name is required"),
   phoneNumber: z.string().min(10, "Phone number must be at least 10 digits").regex(/^\d+$/, "Phone number must contain only digits"),
 
-  // Power Details (Optional)
+  // Power Details (Optional Prescription)
   sph_re: z.coerce.number().optional().nullable(),
   cyl_re: z.coerce.number().optional().nullable(),
   axis_re: z.coerce.number().int().min(0).max(180).optional().nullable(),
@@ -89,8 +73,7 @@ const customerSchema = z.object({
   add_le: z.coerce.number().optional().nullable(),
   pd_le: z.coerce.number().optional().nullable(),
 
-  // Financial Transactions (Optional)
-  transactions: z.array(transactionSchema).optional(),
+  // Financial Transactions and Products Removed
 });
 
 type CustomerFormValues = z.infer<typeof customerSchema>;
@@ -112,13 +95,8 @@ export default function AddCustomerPage() {
       phoneNumber: "",
       sph_re: null, cyl_re: null, axis_re: null, add_re: null, pd_re: null,
       sph_le: null, cyl_le: null, axis_le: null, add_le: null, pd_le: null,
-      transactions: [], // Start with empty transactions
+      // No transactions or products needed
     },
-  });
-
-  const { fields: transactionFields, append: appendTransaction, remove: removeTransaction } = useFieldArray({
-    control: form.control,
-    name: "transactions",
   });
 
   // --- Form Submission ---
@@ -147,7 +125,7 @@ export default function AddCustomerPage() {
         if (hasPrescriptionData) {
             await savePrescription({
                 customerId: customerId,
-                 sph_re: formDataForConfirmation.sph_re,
+                sph_re: formDataForConfirmation.sph_re,
                 cyl_re: formDataForConfirmation.cyl_re,
                 axis_re: formDataForConfirmation.axis_re,
                 add_re: formDataForConfirmation.add_re,
@@ -157,24 +135,11 @@ export default function AddCustomerPage() {
                 axis_le: formDataForConfirmation.axis_le,
                 add_le: formDataForConfirmation.add_le,
                 pd_le: formDataForConfirmation.pd_le,
+                 prescriptionDate: new Date(), // Add prescription date on save
             });
         }
 
-        // 3. Save Transactions (if any)
-        if (formDataForConfirmation.transactions && formDataForConfirmation.transactions.length > 0) {
-            for (const transaction of formDataForConfirmation.transactions) {
-                await saveTransaction({
-                    customerId: customerId,
-                    date: transaction.date,
-                    description: transaction.description,
-                    amount: transaction.amount,
-                    type: transaction.type,
-                });
-            }
-        }
-
-        // 4. Prepare data for Excel export
-        const lastTransaction = formDataForConfirmation.transactions?.[formDataForConfirmation.transactions.length - 1];
+        // 3. Prepare data for Excel export (Customer + Prescription)
         const excelData = {
             id: customerId,
             name: formDataForConfirmation.customerName,
@@ -190,10 +155,7 @@ export default function AddCustomerPage() {
             axis_le: formDataForConfirmation.axis_le,
             add_le: formDataForConfirmation.add_le,
             pd_le: formDataForConfirmation.pd_le,
-            // No invoice/product details for this page
-            lastTransactionDate: lastTransaction?.date,
-            lastTransactionAmount: lastTransaction?.amount,
-            lastTransactionType: lastTransaction?.type,
+            // No invoice/product/transaction details for this page
         };
         await exportCustomerToExcel(excelData); // Placeholder call
 
@@ -204,8 +166,7 @@ export default function AddCustomerPage() {
         });
 
         form.reset(); // Reset form after successful submission
-        // Optionally redirect or stay on page
-        // router.push('/options');
+        router.push('/options'); // Redirect back to options page
 
     } catch (error) {
         console.error("Submission Error:", error);
@@ -223,7 +184,7 @@ export default function AddCustomerPage() {
 
   // --- Render ---
   return (
-    <PageWrapper title="Add New Customer">
+    <PageWrapper title="Add New Customer & Prescription">
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
 
@@ -338,124 +299,7 @@ export default function AddCustomerPage() {
 
                 </div>
             </CardContent>
-          </Card>
-
-          {/* Financial Transactions */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Financial Transactions (Optional)</CardTitle>
-              <CardDescription>Record any initial payments or outstanding balances.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <div className="space-y-4">
-                 {transactionFields.map((item, index) => (
-                    <div key={item.id} className="grid grid-cols-1 md:grid-cols-10 gap-4 border p-4 rounded-md relative">
-                         {/* Date */}
-                         <FormField
-                            control={form.control}
-                            name={`transactions.${index}.date`}
-                            render={({ field }) => (
-                                <FormItem className="flex flex-col col-span-10 md:col-span-2">
-                                    <FormLabel>Date</FormLabel>
-                                    <Popover>
-                                        <PopoverTrigger asChild>
-                                        <FormControl>
-                                            <Button
-                                            variant={"outline"}
-                                            className={cn(
-                                                "w-full pl-3 text-left font-normal",
-                                                !field.value && "text-muted-foreground"
-                                            )}
-                                            >
-                                            {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                            </Button>
-                                        </FormControl>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-auto p-0" align="start">
-                                        <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus />
-                                        </PopoverContent>
-                                    </Popover>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                         />
-                         {/* Description */}
-                        <FormField
-                            control={form.control}
-                            name={`transactions.${index}.description`}
-                            render={({ field }) => (
-                                <FormItem className="col-span-10 md:col-span-4">
-                                    <FormLabel>Description</FormLabel>
-                                    <FormControl>
-                                        <Textarea placeholder="e.g., Initial advance, Old balance" {...field} />
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
-                        {/* Amount */}
-                        <FormField
-                            control={form.control}
-                            name={`transactions.${index}.amount`}
-                            render={({ field }) => (
-                                <FormItem className="col-span-5 md:col-span-2">
-                                    <FormLabel>Amount</FormLabel>
-                                    <FormControl>
-                                        <Input type="number" step="0.01" placeholder="0.00" {...field} />
-                                    </FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
-                         {/* Type */}
-                        <FormField
-                            control={form.control}
-                            name={`transactions.${index}.type`}
-                            render={({ field }) => (
-                                <FormItem className="col-span-5 md:col-span-2">
-                                    <FormLabel>Type</FormLabel>
-                                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                        <FormControl>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select type" />
-                                        </SelectTrigger>
-                                        </FormControl>
-                                        <SelectContent>
-                                        <SelectItem value="credit">Credit (Received)</SelectItem>
-                                        <SelectItem value="debit">Debit (Given)</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                    <FormMessage />
-                                </FormItem>
-                            )}
-                        />
-                        {/* Remove Button */}
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeTransaction(index)}
-                            className="absolute top-1 right-1 text-destructive hover:bg-destructive/10 md:static md:col-span-1 md:self-end"
-                            >
-                            <Trash2 className="h-4 w-4" />
-                            <span className="sr-only">Remove Transaction</span>
-                        </Button>
-                    </div>
-                 ))}
-                </div>
-                 <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="mt-4"
-                    onClick={() => appendTransaction({ date: new Date(), description: "", amount: 0, type: "credit"})}
-                 >
-                    <PlusCircle className="mr-2 h-4 w-4" />
-                    Add Transaction
-                </Button>
-            </CardContent>
-            <CardFooter className="flex justify-end mt-6">
+             <CardFooter className="flex justify-end mt-6">
                  {/* AlertDialog Trigger integrated with Submit Button */}
                 <AlertDialog>
                     <AlertDialogTrigger asChild>
@@ -481,6 +325,7 @@ export default function AddCustomerPage() {
                 </AlertDialog>
             </CardFooter>
           </Card>
+          {/* Financial Transactions section removed */}
 
         </form>
       </Form>
