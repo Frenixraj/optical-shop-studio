@@ -3,15 +3,15 @@
 import * as React from "react";
 import { useSearchParams, useRouter } from 'next/navigation';
 import { format } from 'date-fns';
-import { Loader2, Printer } from 'lucide-react';
+import { Loader2, Printer, ArrowLeft } from 'lucide-react';
 
 import useAuth from '@/hooks/useAuth';
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getCustomerDetails } from "@/lib/db"; // Assuming this fetches all needed data including invoice details
+import { getCustomerDetails } from "@/lib/db";
 import { useToast } from "@/hooks/use-toast";
 
-// Define interfaces based on expected data structure from getCustomerDetails
+// Interfaces matching db.ts structure
 interface ProductDetail {
   invoiceId: number;
   name: string;
@@ -24,7 +24,7 @@ interface InvoiceDetail {
   invoiceId: number;
   customerId: number;
   billNumber: string;
-  dateTime: Date;
+  dateTime: Date | string; // Allow string temporarily from fetch
   discount: number;
   netPrice: number;
   advanceAmount: number;
@@ -44,16 +44,15 @@ interface PrescriptionDetail {
   axis_le: number | null;
   add_le: number | null;
   pd_le: number | null;
-  // Add date if available
-  prescriptionDate?: Date;
+  prescriptionDate?: Date | string; // Allow string temporarily
 }
 
 interface CustomerPrintData {
   id: number;
   name: string;
   phone: string;
-  invoice: InvoiceDetail | null; // Specific invoice for this print job
-  prescription: PrescriptionDetail | null; // Specific prescription related to invoice or latest
+  invoice: InvoiceDetail | null;
+  prescription: PrescriptionDetail | null; // Use latest relevant prescription
 }
 
 
@@ -62,53 +61,77 @@ export default function PrintPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { toast } = useToast();
-  const invoiceId = searchParams.get('invoiceId');
-  const customerId = searchParams.get('customerId');
+  const invoiceIdStr = searchParams.get('invoiceId');
+  const customerIdStr = searchParams.get('customerId');
   const [printData, setPrintData] = React.useState<CustomerPrintData | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
 
   React.useEffect(() => {
     const fetchData = async () => {
-      if (!invoiceId || !customerId) {
+      if (!invoiceIdStr || !customerIdStr) {
         toast({ title: "Error", description: "Missing invoice or customer ID for printing.", variant: "destructive" });
         router.push('/options');
         return;
       }
 
+      const invoiceId = parseInt(invoiceIdStr, 10);
+      const customerId = parseInt(customerIdStr, 10);
+
+      if (isNaN(invoiceId) || isNaN(customerId)) {
+         toast({ title: "Error", description: "Invalid invoice or customer ID.", variant: "destructive" });
+         router.push('/options');
+         return;
+      }
+
       setIsLoading(true);
       try {
-        const customerDetails = await getCustomerDetails(parseInt(customerId, 10));
+        const customerDetails = await getCustomerDetails(customerId);
         if (!customerDetails) {
           toast({ title: "Error", description: "Could not find customer data.", variant: "destructive" });
           router.push('/search-customers');
           return;
         }
 
-        // Find the specific invoice
-        const invoice = customerDetails.invoices?.find(inv => inv.invoiceId === parseInt(invoiceId, 10)) || null;
-        if (!invoice) {
+        // Find the specific invoice and parse its date
+        const rawInvoice = customerDetails.invoices?.find(inv => inv.invoiceId === invoiceId);
+        if (!rawInvoice) {
            toast({ title: "Error", description: "Could not find the specified invoice.", variant: "destructive" });
            router.push(`/view-customer/${customerId}`); // Go back to customer view
            return;
         }
 
-        // Find the related prescription (e.g., the latest one before or on the invoice date)
-        // Simplified: Taking the latest prescription overall for now
-        const prescription = customerDetails.prescriptions?.[0] || null;
+        // Ensure invoice date is a Date object
+        const invoice: InvoiceDetail = {
+           ...rawInvoice,
+           dateTime: new Date(rawInvoice.dateTime), // Parse date string
+           // Ensure products array exists
+           products: rawInvoice.products || [],
+        };
+
+
+        // Find the latest prescription before or on the invoice date
+        let relevantPrescription: PrescriptionDetail | null = null;
+        if (customerDetails.prescriptions && customerDetails.prescriptions.length > 0) {
+            const sortedPrescriptions = [...customerDetails.prescriptions]
+                .map(p => ({ ...p, prescriptionDate: p.prescriptionDate ? new Date(p.prescriptionDate) : null })) // Parse dates
+                .sort((a, b) => (b.prescriptionDate?.getTime() ?? 0) - (a.prescriptionDate?.getTime() ?? 0)); // Sort descending
+
+            relevantPrescription = sortedPrescriptions.find(p => p.prescriptionDate && p.prescriptionDate <= invoice.dateTime) || sortedPrescriptions[0] || null; // Find latest relevant or just the latest
+        }
 
 
         setPrintData({
           id: customerDetails.id,
           name: customerDetails.name,
           phone: customerDetails.phone,
-          invoice: { ...invoice, dateTime: new Date(invoice.dateTime) }, // Ensure date is Date object
-          prescription: prescription ? { ...prescription, prescriptionDate: prescription.prescriptionDate ? new Date(prescription.prescriptionDate) : undefined } : null,
+          invoice: invoice,
+          prescription: relevantPrescription ? { ...relevantPrescription, prescriptionDate: relevantPrescription.prescriptionDate } : null, // Pass parsed date
         });
 
       } catch (error) {
         console.error("Fetch Print Data Error:", error);
         toast({ title: "Error", description: "Failed to load data for printing.", variant: "destructive" });
-        // Optionally redirect
+        router.push(`/view-customer/${customerId}`);
       } finally {
         setIsLoading(false);
       }
@@ -116,11 +139,19 @@ export default function PrintPage() {
 
     fetchData();
      // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoiceId, customerId, router, toast]);
+  }, [invoiceIdStr, customerIdStr, router, toast]);
 
   const handlePrint = () => {
     window.print();
   };
+
+  // Calculate subtotal dynamically
+   const calculateSubTotal = (products?: ProductDetail[]): number => {
+        if (!products || products.length === 0) {
+            return 0;
+        }
+        return products.reduce((sum, p) => sum + (p.total || 0), 0);
+    };
 
   // --- Loading State ---
   if (isLoading) {
@@ -151,19 +182,22 @@ export default function PrintPage() {
    if (!printData || !printData.invoice) {
     return (
       <div className="p-8 print:p-0 text-center text-muted-foreground">
-        Could not load print data.
+        Could not load print data or invoice details are missing.
          <Button onClick={() => router.back()} variant="link" className="block mx-auto mt-4">Go Back</Button>
       </div>
     );
   }
 
   const { invoice, prescription, name, phone } = printData;
+  const subTotal = calculateSubTotal(invoice.products); // Calculate subtotal
 
   // --- Render Printable Content ---
   return (
     <div className="p-4 md:p-8 print:p-0 bg-secondary print:bg-white">
         <div className="flex justify-between items-center mb-4 print:hidden">
-            <Button onClick={() => router.back()} variant="outline">Back</Button>
+            <Button onClick={() => router.back()} variant="outline">
+                <ArrowLeft className="mr-2 h-4 w-4" /> Back
+            </Button>
             <Button onClick={handlePrint}>
                 <Printer className="mr-2 h-4 w-4" /> Print
             </Button>
@@ -185,7 +219,7 @@ export default function PrintPage() {
           <div className="text-right">
             <h2 className="text-xl font-semibold">INVOICE</h2>
             <p className="text-sm">Bill No: {invoice.billNumber}</p>
-            <p className="text-sm">Date: {format(invoice.dateTime, 'PPp')}</p>
+            <p className="text-sm">Date: {invoice.dateTime instanceof Date ? format(invoice.dateTime, 'PPp') : 'Invalid Date'}</p>
           </div>
         </div>
 
@@ -198,7 +232,7 @@ export default function PrintPage() {
 
         {/* Products Table */}
          <table className="w-full text-sm mb-6 border-collapse">
-            <thead className="border-b">
+            <thead className="border-b bg-muted/50">
                 <tr>
                     <th className="text-left font-semibold p-2">#</th>
                     <th className="text-left font-semibold p-2">Product / Service</th>
@@ -208,15 +242,21 @@ export default function PrintPage() {
                 </tr>
             </thead>
              <tbody>
-                 {invoice.products?.map((item, index) => (
-                    <tr key={index} className="border-b">
-                        <td className="p-2">{index + 1}</td>
-                        <td className="p-2">{item.name}</td>
-                        <td className="text-right p-2">{item.price.toFixed(2)}</td>
-                        <td className="text-right p-2">{item.quantity}</td>
-                        <td className="text-right p-2">{item.total.toFixed(2)}</td>
-                    </tr>
-                 ))}
+                 {invoice.products && invoice.products.length > 0 ? (
+                     invoice.products.map((item, index) => (
+                        <tr key={index} className="border-b">
+                            <td className="p-2">{index + 1}</td>
+                            <td className="p-2">{item.name}</td>
+                            <td className="text-right p-2">{item.price?.toFixed(2) ?? '0.00'}</td>
+                            <td className="text-right p-2">{item.quantity ?? 0}</td>
+                            <td className="text-right p-2">{item.total?.toFixed(2) ?? '0.00'}</td>
+                        </tr>
+                     ))
+                 ) : (
+                     <tr>
+                         <td colSpan={5} className="text-center p-4 text-muted-foreground">No products listed for this invoice.</td>
+                     </tr>
+                 )}
              </tbody>
         </table>
 
@@ -225,23 +265,23 @@ export default function PrintPage() {
             <div className="w-full md:w-1/2 lg:w-1/3 space-y-1 text-sm">
                  <div className="flex justify-between">
                     <span>Sub Total:</span>
-                    <span>{(invoice.products?.reduce((sum, p) => sum + p.total, 0) || 0).toFixed(2)}</span>
+                    <span>{subTotal.toFixed(2)}</span>
                 </div>
                  <div className="flex justify-between">
                     <span>Discount:</span>
-                    <span>{invoice.discount.toFixed(2)}</span>
+                    <span>{invoice.discount?.toFixed(2) ?? '0.00'}</span>
                 </div>
                  <div className="flex justify-between font-semibold border-t pt-1">
                     <span>Net Price:</span>
-                    <span>{invoice.netPrice.toFixed(2)}</span>
+                    <span>{invoice.netPrice?.toFixed(2) ?? '0.00'}</span>
                 </div>
                  <div className="flex justify-between">
                     <span>Advance Paid:</span>
-                    <span>{invoice.advanceAmount.toFixed(2)}</span>
+                    <span>{invoice.advanceAmount?.toFixed(2) ?? '0.00'}</span>
                 </div>
-                 <div className="flex justify-between font-semibold border-t pt-1 text-lg">
+                 <div className="flex justify-between font-semibold border-t pt-1 text-base">
                     <span>Balance Due:</span>
-                    <span>{invoice.balanceAmount.toFixed(2)}</span>
+                    <span>{invoice.balanceAmount?.toFixed(2) ?? '0.00'}</span>
                 </div>
             </div>
         </div>
@@ -250,10 +290,9 @@ export default function PrintPage() {
         {prescription && (
           <div className="border-t pt-6 mt-8">
             <h2 className="text-lg font-semibold mb-4">Prescription Details</h2>
-             {/* Optional: Add Prescription Date */}
-             {/* {prescription.prescriptionDate && <p className="text-sm mb-3">Date: {format(prescription.prescriptionDate, 'PP')}</p>} */}
+             {prescription.prescriptionDate && <p className="text-sm mb-3 text-muted-foreground">Prescription Date: {format(new Date(prescription.prescriptionDate), 'PP')}</p>}
              <table className="w-full text-sm border-collapse">
-                 <thead className="border-b">
+                 <thead className="border-b bg-muted/50">
                     <tr>
                         <th className="p-2 text-center font-semibold">Eye</th>
                         <th className="p-2 text-center font-semibold">SPH</th>
@@ -299,9 +338,11 @@ export default function PrintPage() {
           body {
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
+            margin: 0; /* Remove default browser margins */
+            background-color: white; /* Ensure background is white */
           }
           .print\:hidden {
-            display: none;
+            display: none !important; /* Ensure elements are hidden */
           }
            .print\:p-0 {
              padding: 0 !important;
@@ -315,6 +356,16 @@ export default function PrintPage() {
            .print\:bg-white {
                 background-color: white !important;
            }
+           /* Add page break avoidance */
+            table, figure {
+                page-break-inside: avoid;
+            }
+            h1, h2, h3, h4, h5, h6 {
+                 page-break-after: avoid;
+            }
+            thead {
+                 display: table-header-group; /* Ensure thead repeats on new pages */
+            }
         }
       `}</style>
     </div>
