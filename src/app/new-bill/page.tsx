@@ -478,8 +478,8 @@ export default function NewBillPage() {
                     <TableHead className="w-2/5">Product Name</TableHead>
                     <TableHead>Price</TableHead>
                     <TableHead>Quantity</TableHead>
-                    <TableHead className="text-right">Total Price</TableHead> {/* Align right */}
-                    <TableHead className="text-center">Action</TableHead> {/* Center align */}
+                    <TableHead className="text-right">Total Price</TableHead>{/* Align right */}
+                    <TableHead className="text-center">Action</TableHead>{/* Center align */}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
