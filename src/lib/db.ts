@@ -158,6 +158,9 @@ export async function saveCustomer(data: Omit<CustomerData, 'createdAt'>): Promi
     }
   } catch (error) {
     console.error("Error saving customer:", error);
+    if (error instanceof FirestoreError && error.code === 'permission-denied') {
+        throw new Error("Permission denied when saving customer. Check Firestore rules for 'customers'.");
+    }
     throw new Error("Failed to save customer data.");
   }
 }
@@ -173,6 +176,9 @@ export async function savePrescription(data: Omit<PrescriptionData, 'prescriptio
         console.log("Prescription saved successfully for customer:", data.customerId);
     } catch (error) {
         console.error("Error saving prescription:", error);
+         if (error instanceof FirestoreError && error.code === 'permission-denied') {
+            throw new Error("Permission denied when saving prescription. Check Firestore rules for 'prescriptions'.");
+         }
         throw new Error("Failed to save prescription data.");
     }
 }
@@ -189,6 +195,9 @@ export async function saveInvoice(data: Omit<InvoiceData, 'dateTime'> & { dateTi
     return { id: docRef.id };
   } catch (error) {
     console.error("Error saving invoice:", error);
+    if (error instanceof FirestoreError && error.code === 'permission-denied') {
+        throw new Error("Permission denied when saving invoice. Check Firestore rules for 'invoices'.");
+    }
     throw new Error("Failed to save invoice data.");
   }
 }
@@ -218,6 +227,9 @@ export async function saveProducts(invoiceId: string, products: Omit<ProductData
     console.log("Products saved successfully for invoice:", invoiceId);
   } catch (error) {
     console.error("Error saving products:", error);
+    if (error instanceof FirestoreError && error.code === 'permission-denied') {
+        throw new Error(`Permission denied when saving products for invoice ${invoiceId}. Check Firestore rules for 'invoices/${invoiceId}/products'.`);
+    }
     throw new Error("Failed to save product data.");
   }
 }
@@ -296,8 +308,10 @@ export async function findCustomers(criteria: SearchCriteria): Promise<CustomerS
                  // Apply 'in' constraints or filter later if combined with phone
                  if (!criteria.phone) {
                      // If only filtering by date, apply 'in' directly
+                     // Combine all chunks into a single 'in' query constraint array (Firestore now supports up to 30 'in' clauses per query)
+                     // Update: Firestore now allows multiple 'in' clauses, but limited total elements. Keeping simple chunking.
                      customerQueryConstraints.push(where("__name__", "in", idChunks[0])); // Add first chunk
-                     // TODO: Handle multiple chunks if idChunks.length > 1
+                     // TODO: Handle multiple chunks if idChunks.length > 1 - requires multiple queries and merging results
                  }
                  // If phone is also present, the customer query already includes phone,
                  // we will filter the results afterwards to ensure ID is in customerIdsFromInvoices
@@ -389,6 +403,9 @@ export async function findCustomers(criteria: SearchCriteria): Promise<CustomerS
 
     } catch (error) {
         console.error("Error finding customers:", error);
+        if (error instanceof FirestoreError && error.code === 'permission-denied') {
+            throw new Error("Permission denied when searching customers. Check Firestore rules for 'customers' and 'invoices'.");
+        }
         throw new Error(`Failed to search for customers: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
@@ -453,6 +470,9 @@ export async function getCustomerDetails(customerId: string): Promise<FullCustom
 
     } catch (error) {
         console.error("Error getting customer details:", error);
+        if (error instanceof FirestoreError && error.code === 'permission-denied') {
+            throw new Error(`Permission denied getting details for customer ${customerId}. Check Firestore rules.`);
+        }
         throw new Error("Failed to load customer details.");
     }
 }
@@ -466,6 +486,9 @@ export async function updateCustomer(customerId: string, data: Partial<Omit<Cust
     console.log("Customer updated successfully.");
   } catch (error) {
     console.error("Error updating customer:", error);
+    if (error instanceof FirestoreError && error.code === 'permission-denied') {
+        throw new Error(`Permission denied updating customer ${customerId}. Check Firestore rules for 'customers'.`);
+    }
     throw new Error("Failed to update customer data.");
   }
 }
@@ -514,62 +537,80 @@ export async function deleteCustomer(customerId: string): Promise<void> {
          if (error instanceof FirestoreError) {
              console.error(`Firestore Error Code: ${error.code}`);
              console.error(`Firestore Error Message: ${error.message}`);
+             if (error.code === 'permission-denied') {
+                 throw new Error(`Permission denied deleting customer ${customerId}. Check Firestore rules.`);
+             }
          }
         throw new Error(`Failed to delete customer and associated data: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
 export async function getNextBillNumber(): Promise<string> {
-    console.log("Fetching next bill number from Firestore");
+    console.log("Attempting to fetch next bill number from Firestore path:", BILL_COUNTER_DOC);
     const counterRef = doc(db, BILL_COUNTER_DOC);
 
     try {
-        let nextNumber: number;
+        let nextNumber: number | undefined; // Initialize as potentially undefined
         await runTransaction(db, async (transaction) => {
+            console.log("Inside transaction for bill counter.");
             const counterSnap = await transaction.get(counterRef);
+
             if (!counterSnap.exists()) {
-                console.log("Bill counter document not found, initializing to 1.");
-                // IMPORTANT: Ensure the user/service account has permission to create this document.
+                console.warn(`Bill counter document at '${BILL_COUNTER_DOC}' not found. Initializing to 1.`);
+                // Check permissions BEFORE trying to set. This helps diagnose rules issues.
+                // We can't directly check write permissions within the transaction easily,
+                // but the `set` operation itself will fail if permissions are denied.
                 transaction.set(counterRef, { lastNumber: 1 });
                 nextNumber = 1;
+                console.log("Set initial bill counter to 1 in transaction.");
             } else {
-                const lastNumber = counterSnap.data().lastNumber;
+                const data = counterSnap.data();
+                console.log("Bill counter document exists. Data:", data);
+                const lastNumber = data?.lastNumber; // Use optional chaining
+
                 if (typeof lastNumber !== 'number' || !Number.isInteger(lastNumber)) {
-                    console.error("Invalid 'lastNumber' in counter document:", lastNumber, "Resetting to 1.");
+                    console.error("Invalid 'lastNumber' field in counter document:", lastNumber, "- Type:", typeof lastNumber, ". Resetting to 1.");
                     nextNumber = 1;
-                    transaction.set(counterRef, { lastNumber: 1 }); // Reset if invalid
+                    transaction.set(counterRef, { lastNumber: 1 }); // Use set to overwrite potentially corrupt data
                 } else {
                     nextNumber = lastNumber + 1;
-                     console.log(`Last number was ${lastNumber}, setting next to ${nextNumber}.`);
+                    console.log(`Last number was ${lastNumber}, calculated next number: ${nextNumber}.`);
                     transaction.update(counterRef, { lastNumber: nextNumber });
+                    console.log("Updated bill counter to", nextNumber, "in transaction.");
                 }
             }
         });
-         // nextNumber should be defined after successful transaction
-         // Add defensive check just in case transaction logic fails silently (shouldn't happen)
-         if (typeof nextNumber! !== 'number') {
-             throw new Error("Transaction completed but next bill number is not defined.");
+
+         // After the transaction, nextNumber *should* be defined.
+         if (typeof nextNumber !== 'number') {
+            console.error("Transaction completed, but 'nextNumber' is still undefined. This indicates a logic error or unexpected transaction state.");
+            throw new Error("Failed to determine the next bill number after transaction.");
          }
-         const formattedBillNumber = `INV-${nextNumber!.toString().padStart(3, '0')}`;
-         console.log("Returning next bill number:", formattedBillNumber);
+
+         const formattedBillNumber = `INV-${nextNumber.toString().padStart(3, '0')}`;
+         console.log("Successfully fetched and updated bill counter. Returning formatted number:", formattedBillNumber);
          return formattedBillNumber;
+
     } catch (error) {
-         console.error("Error fetching/updating bill number in transaction:", error);
+         console.error("Error during getNextBillNumber transaction:", error);
          let errorMessage = "Failed to get the next bill number.";
-          if (error instanceof FirestoreError) {
+
+         if (error instanceof FirestoreError) {
              console.error(`Firestore Error Code: ${error.code}`);
              console.error(`Firestore Error Message: ${error.message}`);
              if (error.code === 'permission-denied') {
-                 errorMessage = "Permission denied when accessing bill counter. Check Firestore security rules for 'counters/billCounter'.";
+                 errorMessage = `Permission denied accessing bill counter at '${BILL_COUNTER_DOC}'. Check Firestore security rules. Ensure the logged-in user has read/write access.`;
+             } else if (error.code === 'aborted') {
+                 errorMessage = "The bill counter transaction was aborted, possibly due to contention. Please try again.";
              } else {
                  errorMessage = `Firestore error getting bill number: ${error.message}`;
              }
          } else if (error instanceof Error) {
-            errorMessage = `Error getting bill number: ${error.message}`;
+            // Catch potential errors thrown from within the transaction logic
+            errorMessage = error.message; // Use the specific error message
          }
-         // Fallback or re-throw
+
+         // Re-throw a more informative error
          throw new Error(errorMessage);
     }
 }
-
-    

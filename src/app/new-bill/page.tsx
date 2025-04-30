@@ -142,24 +142,27 @@ export default function NewBillPage() {
     const fetchBillNumber = async () => {
       setIsBillNumberLoading(true);
       try {
+        console.log("Attempting to fetch next bill number from component...");
         const nextBillNo = await getNextBillNumber();
+        console.log("Successfully fetched next bill number:", nextBillNo);
         form.setValue("billNumber", nextBillNo);
       } catch (error) {
-        console.error("Failed to fetch bill number:", error);
+        console.error("Failed to fetch bill number in component:", error);
         const errorMessage = error instanceof Error ? error.message : "Could not fetch the next bill number.";
         toast({
-            title: "Error",
+            title: "Error Fetching Bill Number",
             description: errorMessage, // Display more specific error
             variant: "destructive"
         });
         // Consider disabling form submission if bill number fails (button is already disabled below)
       } finally {
         setIsBillNumberLoading(false);
+        console.log("Finished fetching bill number.");
       }
     };
     fetchBillNumber();
      // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoadingAuth]); // Run when isLoadingAuth changes to false
+  }, [isLoadingAuth, toast, form.setValue]); // Added toast and form.setValue dependencies
 
 
   // --- Calculation Logic ---
@@ -315,7 +318,8 @@ export default function NewBillPage() {
                 advanceAmount: formDataForConfirmation.advanceAmount,
                 balanceAmount: formDataForConfirmation.balanceAmount,
                 // Include createdAt if needed, fetch it or use customerResult
-                 createdAt: customerResult.createdAt ? customerResult.createdAt.toDate() : new Date() // Example
+                 // createdAt: customerResult.createdAt ? customerResult.createdAt.toDate() : new Date() // createdAt is not directly on customerResult
+                 createdAt: new Date() // Assuming creation time is now if needed for export
             };
             await exportCustomerToExcel(excelData as any); // Pass data, might need type adjustment
         } catch (exportError) {
@@ -341,8 +345,8 @@ export default function NewBillPage() {
         console.error("Submission Error:", error);
         const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
         toast({
-            title: "Error",
-            description: `Failed to save data: ${errorMessage}`,
+            title: "Error Saving Data",
+            description: errorMessage, // Show specific error from db functions
             variant: "destructive",
         });
     } finally {

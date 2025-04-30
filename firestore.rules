@@ -1,15 +1,47 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // WARNING: This allows ANY client to read and write to your database.
-    // This is NOT secure for a production application accessible by untrusted users.
-    // Use this ONLY if the application itself is protected by other means (e.g., network restrictions)
-    // or for initial development/testing where security is not the primary concern.
-    // For production, you MUST implement proper Firebase Authentication and security rules
-    // based on user identity and roles.
-    match /{document=**} {
-      allow read, write: if true;
+    // Helper function to check if the user is the specific 'visionclear' user
+    function isVisionClearUser() {
+      // IMPORTANT: Replace 'YOUR_VISIONCLEAR_USER_UID' with the actual Firebase Auth UID
+      //            for the 'visionclear' user after you create/authenticate them.
+      //            You can find the UID in the Firebase Console Authentication section.
+      return request.auth != null && request.auth.uid == 'YOUR_VISIONCLEAR_USER_UID';
     }
+
+    // Rules for the bill counter
+    match /counters/billCounter {
+      // Only the 'visionclear' user can read and write the counter
+      allow read, write: if isVisionClearUser();
+    }
+
+    // Rules for customer data
+    match /customers/{customerId} {
+      // Only the 'visionclear' user can create, read, update, delete customer data
+      allow read, write, create, update, delete: if isVisionClearUser();
+    }
+
+    // Rules for prescriptions
+    match /prescriptions/{prescriptionId} {
+       // Only the 'visionclear' user can manage prescriptions
+      allow read, write, create, update, delete: if isVisionClearUser();
+    }
+
+     // Rules for invoices and their products subcollection
+    match /invoices/{invoiceId} {
+       // Only the 'visionclear' user can manage invoices
+      allow read, write, create, update, delete: if isVisionClearUser();
+
+      // Rules for the products subcollection within an invoice
+      match /products/{productId} {
+         // Only the 'visionclear' user can manage products within an invoice
+        allow read, write, create, update, delete: if isVisionClearUser();
+      }
+    }
+
+    // Default Deny: Optionally, explicitly deny all other access if not matched above.
+    // match /{document=**} {
+    //   allow read, write: if false;
+    // }
   }
 }
