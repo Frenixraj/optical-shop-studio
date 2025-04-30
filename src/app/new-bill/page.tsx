@@ -243,6 +243,8 @@ export default function NewBillPage() {
                 axis_le: formDataForConfirmation.axis_le,
                 add_le: formDataForConfirmation.add_le,
                 pd_le: formDataForConfirmation.pd_le,
+                // Ensure prescriptionDate is saved if needed, maybe pass from form or set here
+                 prescriptionDate: new Date(), // Or formDataForConfirmation.dateTime if appropriate
             });
         }
 
@@ -553,82 +555,75 @@ export default function NewBillPage() {
                  <CardTitle>Payment Summary</CardTitle>
             </CardHeader>
              <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                 <div></div> {/* Spacer */}
-                 <div></div> {/* Spacer */}
-                 <Label className="text-right font-semibold pt-2">Sub Total:</Label>
+                 {/* Sub Total */}
+                 <Label className="text-right font-semibold pt-2 md:col-start-3">Sub Total:</Label>
                  <Input
                     readOnly
                     value={(form.getValues("products")?.reduce((sum, p) => sum + (p.total || 0), 0) || 0).toFixed(2)}
-                    className="bg-muted border-none text-right"
-                />
+                    className="bg-muted border-none text-right md:col-start-4"
+                 />
 
-
-                <div></div> {/* Spacer */}
-                <div></div> {/* Spacer */}
+                 {/* Discount */}
                  <FormField
                     control={form.control}
                     name="discount"
                     render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="md:col-start-3">
                         <FormLabel className="text-right block">Discount:</FormLabel>
                         <FormControl>
-                        <Input type="number" step="0.01" placeholder="0.00" {...field} className="text-right" onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}/>
+                            <Input type="number" step="0.01" placeholder="0.00" {...field} className="text-right" onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}/>
                         </FormControl>
                         <FormMessage />
                     </FormItem>
                     )}
-                />
-                 <div></div> {/* Placeholder for alignment */}
+                 />
+                 <div className="md:col-start-4"></div> {/* Placeholder for alignment */}
 
-                <div></div> {/* Spacer */}
-                 <div></div> {/* Spacer */}
-                <Label className="text-right font-semibold">Net Price:</Label>
+                 {/* Net Price */}
+                 <Label className="text-right font-semibold md:col-start-3">Net Price:</Label>
                  <FormField
                     control={form.control}
                     name="netPrice"
                     render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="md:col-start-4">
                         <FormControl>
                             <Input readOnly value={field.value?.toFixed(2) || '0.00'} className="bg-muted border-none text-right font-semibold"/>
                         </FormControl>
                         <FormMessage />
                     </FormItem>
                     )}
-                />
+                 />
 
-
-               <div></div> {/* Spacer */}
-                <div></div> {/* Spacer */}
+                 {/* Advance Amount */}
                  <FormField
                     control={form.control}
                     name="advanceAmount"
                     render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="md:col-start-3">
                         <FormLabel className="text-right block">Advance Amount:</FormLabel>
                         <FormControl>
-                        <Input type="number" step="0.01" placeholder="0.00" {...field} className="text-right" onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}/>
+                            <Input type="number" step="0.01" placeholder="0.00" {...field} className="text-right" onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}/>
                         </FormControl>
                         <FormMessage />
                     </FormItem>
                     )}
-                />
-                 <div></div> {/* Placeholder for alignment */}
+                 />
+                 <div className="md:col-start-4"></div> {/* Placeholder for alignment */}
 
-                <div></div> {/* Spacer */}
-                 <div></div> {/* Spacer */}
-                <Label className="text-right font-semibold">Balance Amount:</Label>
+                 {/* Balance Amount */}
+                 <Label className="text-right font-semibold md:col-start-3">Balance Amount:</Label>
                  <FormField
                     control={form.control}
                     name="balanceAmount"
                     render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="md:col-start-4">
                         <FormControl>
                          <Input readOnly value={field.value?.toFixed(2) || '0.00'} className="bg-muted border-none text-right font-semibold"/>
                         </FormControl>
                          <FormMessage />
                     </FormItem>
                     )}
-                />
+                 />
             </CardContent>
              <CardFooter className="flex justify-end mt-6">
                  {/* AlertDialog Trigger integrated with Submit Button */}
@@ -663,5 +658,5 @@ export default function NewBillPage() {
 }
 
 
-    
-    
+
+
