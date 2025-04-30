@@ -350,7 +350,7 @@ export default function SearchCustomersPage() {
                         <FormItem className="md:col-span-1">
                              <FormLabel>Month (Optional)</FormLabel>
                             <Select onValueChange={(value) => {
-                                field.onChange(value ? parseInt(value) : null);
+                                field.onChange(value === 'clear' ? null : (value ? parseInt(value) : null));
                                 // Clear specific date if month/year is selected
                                 // form.setValue('searchDate', null);
                                 }} value={field.value?.toString() ?? ""}>
@@ -379,7 +379,7 @@ export default function SearchCustomersPage() {
                         <FormItem className="md:col-span-1">
                              <FormLabel>Year (Optional)</FormLabel>
                             <Select onValueChange={(value) => {
-                                field.onChange(value ? parseInt(value) : null);
+                                field.onChange(value === 'clear' ? null : (value ? parseInt(value) : null));
                                 // Clear specific date if month/year is selected
                                 // form.setValue('searchDate', null);
                                 }} value={field.value?.toString() ?? ""}>

@@ -203,30 +203,30 @@ export default function PrintPage() {
         {/* Products Table */}
          <table className="w-full text-sm mb-6 border-collapse">
             <thead className="border-b bg-muted/50">
-                <tr>
-                    <th className="text-left font-semibold p-2">#</th>
-                    <th className="text-left font-semibold p-2">Product / Service</th>
-                    <th className="text-right font-semibold p-2">Price</th>
-                    <th className="text-right font-semibold p-2">Quantity</th>
-                    <th className="text-right font-semibold p-2">Total</th>
-                </tr>
+                <TableRow>
+                    <TableHead className="text-left font-semibold p-2">#</TableHead>
+                    <TableHead className="text-left font-semibold p-2">Product / Service</TableHead>
+                    <TableHead className="text-right font-semibold p-2">Price</TableHead>
+                    <TableHead className="text-right font-semibold p-2">Quantity</TableHead>
+                    <TableHead className="text-right font-semibold p-2">Total</TableHead>
+                </TableRow>
             </thead>
              <tbody>
                  {products.length > 0 ? (
                      products.map((item, index) => (
-                        <tr key={item.id} className="border-b"> {/* Use item.id from Firestore */}
-                            <td className="p-2">{index + 1}</td>
-                            <td className="p-2">{item.name}</td>
+                        <TableRow key={item.id} className="border-b"> {/* Use item.id from Firestore */}
+                            <TableCell className="p-2">{index + 1}</TableCell>
+                            <TableCell className="p-2">{item.name}</TableCell>
                              {/* Ensure numeric conversion for calculations/display */}
-                            <td className="text-right p-2">{(Number(item.price) || 0).toFixed(2)}</td>
-                            <td className="text-right p-2">{Number(item.quantity) || 0}</td>
-                            <td className="text-right p-2">{(Number(item.total) || 0).toFixed(2)}</td>
-                        </tr>
+                            <TableCell className="text-right p-2">{(Number(item.price) || 0).toFixed(2)}</TableCell>
+                            <TableCell className="text-right p-2">{Number(item.quantity) || 0}</TableCell>
+                            <TableCell className="text-right p-2">{(Number(item.total) || 0).toFixed(2)}</TableCell>
+                        </TableRow>
                      ))
                  ) : (
-                     <tr>
-                         <td colSpan={5} className="text-center p-4 text-muted-foreground">No products listed for this invoice.</td>
-                     </tr>
+                     <TableRow>
+                         <TableCell colSpan={5} className="text-center p-4 text-muted-foreground">No products listed for this invoice.</TableCell>
+                     </TableRow>
                  )}
              </tbody>
         </table>
@@ -266,33 +266,33 @@ export default function PrintPage() {
              {prescription.prescriptionDate && <p className="text-sm mb-3 text-muted-foreground">Prescription Date: {format(prescription.prescriptionDate, 'PP')}</p>}
              <table className="w-full text-sm border-collapse">
                  <thead className="border-b bg-muted/50">
-                    <tr>
-                        <th className="p-2 text-center font-semibold">Eye</th>
-                        <th className="p-2 text-center font-semibold">SPH</th>
-                        <th className="p-2 text-center font-semibold">CYL</th>
-                        <th className="p-2 text-center font-semibold">Axis</th>
-                        <th className="p-2 text-center font-semibold">Add</th>
-                        <th className="p-2 text-center font-semibold">PD</th>
-                    </tr>
+                    <TableRow>
+                        <TableHead className="p-2 text-center font-semibold">Eye</TableHead>
+                        <TableHead className="p-2 text-center font-semibold">SPH</TableHead>
+                        <TableHead className="p-2 text-center font-semibold">CYL</TableHead>
+                        <TableHead className="p-2 text-center font-semibold">Axis</TableHead>
+                        <TableHead className="p-2 text-center font-semibold">Add</TableHead>
+                        <TableHead className="p-2 text-center font-semibold">PD</TableHead>
+                    </TableRow>
                  </thead>
                  <tbody>
-                    <tr className="border-b">
-                         <td className="p-2 text-center font-semibold">RE</td>
+                    <TableRow className="border-b">
+                         <TableCell className="p-2 text-center font-semibold">RE</TableCell>
                          {/* Ensure numeric conversion and null checks */}
-                         <td className="p-2 text-center">{prescription.sph_re != null ? Number(prescription.sph_re).toFixed(2) : '-'}</td>
-                         <td className="p-2 text-center">{prescription.cyl_re != null ? Number(prescription.cyl_re).toFixed(2) : '-'}</td>
-                         <td className="p-2 text-center">{prescription.axis_re ?? '-'}</td>
-                         <td className="p-2 text-center">{prescription.add_re != null ? Number(prescription.add_re).toFixed(2) : '-'}</td>
-                         <td className="p-2 text-center">{prescription.pd_re != null ? Number(prescription.pd_re).toFixed(1) : '-'}</td>
-                    </tr>
-                     <tr>
-                         <td className="p-2 text-center font-semibold">LE</td>
-                         <td className="p-2 text-center">{prescription.sph_le != null ? Number(prescription.sph_le).toFixed(2) : '-'}</td>
-                         <td className="p-2 text-center">{prescription.cyl_le != null ? Number(prescription.cyl_le).toFixed(2) : '-'}</td>
-                         <td className="p-2 text-center">{prescription.axis_le ?? '-'}</td>
-                         <td className="p-2 text-center">{prescription.add_le != null ? Number(prescription.add_le).toFixed(2) : '-'}</td>
-                         <td className="p-2 text-center">{prescription.pd_le != null ? Number(prescription.pd_le).toFixed(1) : '-'}</td>
-                    </tr>
+                         <TableCell className="p-2 text-center">{prescription.sph_re != null ? Number(prescription.sph_re).toFixed(2) : '-'}</TableCell>
+                         <TableCell className="p-2 text-center">{prescription.cyl_re != null ? Number(prescription.cyl_re).toFixed(2) : '-'}</TableCell>
+                         <TableCell className="p-2 text-center">{prescription.axis_re ?? '-'}</TableCell>
+                         <TableCell className="p-2 text-center">{prescription.add_re != null ? Number(prescription.add_re).toFixed(2) : '-'}</TableCell>
+                         <TableCell className="p-2 text-center">{prescription.pd_re != null ? Number(prescription.pd_re).toFixed(1) : '-'}</TableCell>
+                    </TableRow>
+                     <TableRow>
+                         <TableCell className="p-2 text-center font-semibold">LE</TableCell>
+                         <TableCell className="p-2 text-center">{prescription.sph_le != null ? Number(prescription.sph_le).toFixed(2) : '-'}</TableCell>
+                         <TableCell className="p-2 text-center">{prescription.cyl_le != null ? Number(prescription.cyl_le).toFixed(2) : '-'}</TableCell>
+                         <TableCell className="p-2 text-center">{prescription.axis_le ?? '-'}</TableCell>
+                         <TableCell className="p-2 text-center">{prescription.add_le != null ? Number(prescription.add_le).toFixed(2) : '-'}</TableCell>
+                         <TableCell className="p-2 text-center">{prescription.pd_le != null ? Number(prescription.pd_le).toFixed(1) : '-'}</TableCell>
+                    </TableRow>
                  </tbody>
             </table>
           </div>
