@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from "react";
@@ -7,6 +8,7 @@ import { FilePlus2, Search, UserPlus, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import useAuth from '@/hooks/useAuth'; // Assuming useAuth hook handles redirection if not logged in
+import VisionClearLogo from "@/components/icons/VisionClearLogo"; // Import the logo
 
 export default function OptionsPage() {
   useAuth(); // Protect the route
@@ -19,9 +21,9 @@ export default function OptionsPage() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-secondary p-4">
-       {/* Placeholder for Logo */}
+       {/* Use the Logo Component */}
        <div className="mb-8">
-            <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--primary))" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-glasses"><path d="M6 15h.01"/><path d="M18 15h.01"/><path d="M3 15a2 2 0 0 1-2-2V9a4 4 0 0 1 4-4h1"/><path d="M21 15a2 2 0 0 0 2-2V9a4 4 0 0 0-4-4h-1"/><path d="M7.5 11a1.5 1.5 0 0 1 1.5 1.5v0a1.5 1.5 0 0 1-1.5 1.5h-1A1.5 1.5 0 0 1 5 12.5v0A1.5 1.5 0 0 1 6.5 11h1Z"/><path d="M16.5 11a1.5 1.5 0 0 1 1.5 1.5v0a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5v0a1.5 1.5 0 0 1 1.5-1.5h1Z"/><path d="M10 15h4"/></svg>
+           <VisionClearLogo width={200} height={80} />
        </div>
 
       <Card className="w-full max-w-md shadow-lg">

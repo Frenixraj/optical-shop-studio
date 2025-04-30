@@ -2,6 +2,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Home } from 'lucide-react';
 import Link from 'next/link';
+import VisionClearLogo from "@/components/icons/VisionClearLogo"; // Import the logo
 
 interface PageWrapperProps {
   title: string;
@@ -19,16 +20,16 @@ const PageWrapper: React.FC<PageWrapperProps> = ({ title, children }) => {
                     <span className="sr-only">Back to Options</span>
                 </Button>
             </Link>
-            {/* Placeholder for Logo */}
+            {/* Use the Logo Component */}
             <div className="flex items-center gap-2">
-                 <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--primary))" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-glasses"><path d="M6 15h.01"/><path d="M18 15h.01"/><path d="M3 15a2 2 0 0 1-2-2V9a4 4 0 0 1 4-4h1"/><path d="M21 15a2 2 0 0 0 2-2V9a4 4 0 0 0-4-4h-1"/><path d="M7.5 11a1.5 1.5 0 0 1 1.5 1.5v0a1.5 1.5 0 0 1-1.5 1.5h-1A1.5 1.5 0 0 1 5 12.5v0A1.5 1.5 0 0 1 6.5 11h1Z"/><path d="M16.5 11a1.5 1.5 0 0 1 1.5 1.5v0a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5v0a1.5 1.5 0 0 1 1.5-1.5h1Z"/><path d="M10 15h4"/></svg>
-                <h1 className="text-2xl sm:text-3xl font-bold text-primary">VisionClear</h1>
+                 <VisionClearLogo width={120} height={48} />
+                 {/* Removed the text title "VisionClear" */}
             </div>
 
          </div>
-        <h2 className="text-xl sm:text-2xl font-semibold text-foreground">{title}</h2>
+        <h2 className="text-xl sm:text-2xl font-semibold text-foreground text-right flex-1 truncate">{title}</h2>
         <Link href="/options" passHref>
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary">
+            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary ml-4">
                 <Home className="h-5 w-5" />
                  <span className="sr-only">Home</span>
             </Button>
@@ -38,7 +39,7 @@ const PageWrapper: React.FC<PageWrapperProps> = ({ title, children }) => {
         {children}
       </main>
        <footer className="mt-8 text-center text-xs text-muted-foreground">
-          &copy; {new Date().getFullYear()} VisionClear Optical Shop. All rights reserved.
+          &copy; {new Date().getFullYear()} Vision Clear Opticals. All rights reserved.
       </footer>
     </div>
   );

@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from "react";
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getCustomerDetails } from "@/lib/db";
 import { useToast } from "@/hooks/use-toast";
+import VisionClearLogo from "@/components/icons/VisionClearLogo"; // Import the logo
 
 // Interfaces matching db.ts structure
 interface ProductDetail {
@@ -190,6 +192,9 @@ export default function PrintPage() {
 
   const { invoice, prescription, name, phone } = printData;
   const subTotal = calculateSubTotal(invoice.products); // Calculate subtotal
+  const shopAddress = "22, Dharmaraja Kovil street, Alandur, Chennai, Tamil Nadu 600016";
+  const shopPhone = "9092196263";
+
 
   // --- Render Printable Content ---
   return (
@@ -207,17 +212,20 @@ export default function PrintPage() {
       <div id="printable-area" className="max-w-4xl mx-auto bg-white p-6 md:p-10 border border-gray-300 shadow-lg print:shadow-none print:border-none print:p-0">
 
         {/* Header with Logo */}
-        <div className="flex justify-between items-center border-b pb-4 mb-6">
-          <div className="flex items-center gap-3">
-                {/* Placeholder for Logo */}
-                <svg xmlns="http://www.w3.org/2000/svg" width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--primary))" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-glasses"><path d="M6 15h.01"/><path d="M18 15h.01"/><path d="M3 15a2 2 0 0 1-2-2V9a4 4 0 0 1 4-4h1"/><path d="M21 15a2 2 0 0 0 2-2V9a4 4 0 0 0-4-4h-1"/><path d="M7.5 11a1.5 1.5 0 0 1 1.5 1.5v0a1.5 1.5 0 0 1-1.5 1.5h-1A1.5 1.5 0 0 1 5 12.5v0A1.5 1.5 0 0 1 6.5 11h1Z"/><path d="M16.5 11a1.5 1.5 0 0 1 1.5 1.5v0a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5v0a1.5 1.5 0 0 1 1.5-1.5h1Z"/><path d="M10 15h4"/></svg>
-            <div>
-              <h1 className="text-2xl font-bold text-primary">VisionClear Optical Shop</h1>
-              <p className="text-sm text-muted-foreground">Your Address Here | Your Phone Here</p>
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b pb-4 mb-6">
+           <div className="flex items-center gap-3 mb-4 md:mb-0">
+                <VisionClearLogo width={150} height={60} />
+                {/* Shop details removed from here, placed below logo */}
+           </div>
+          <div className="text-left md:text-right w-full md:w-auto">
+             {/* Shop Details */}
+            <div className="mb-2 md:mb-0">
+              {/* <h1 className="text-xl font-bold text-primary">Vision Clear Opticals</h1> */}
+              <p className="text-xs text-muted-foreground">{shopAddress}</p>
+              <p className="text-xs text-muted-foreground">Phone: {shopPhone}</p>
             </div>
-          </div>
-          <div className="text-right">
-            <h2 className="text-xl font-semibold">INVOICE</h2>
+             {/* Invoice Details */}
+            <h2 className="text-xl font-semibold mt-2">INVOICE</h2>
             <p className="text-sm">Bill No: {invoice.billNumber}</p>
             <p className="text-sm">Date: {invoice.dateTime instanceof Date ? format(invoice.dateTime, 'PPp') : 'Invalid Date'}</p>
           </div>
@@ -326,7 +334,7 @@ export default function PrintPage() {
 
          {/* Footer */}
          <div className="border-t pt-4 mt-8 text-center text-xs text-muted-foreground">
-            Thank you for your business! | VisionClear Optical Shop
+            Thank you for your business! | Vision Clear Opticals
          </div>
 
       </div>
@@ -362,10 +370,24 @@ export default function PrintPage() {
             }
             h1, h2, h3, h4, h5, h6 {
                  page-break-after: avoid;
+                 page-break-inside: avoid;
             }
             thead {
                  display: table-header-group; /* Ensure thead repeats on new pages */
             }
+             div {
+                 page-break-inside: avoid;
+            }
+             #printable-area > div {
+                 page-break-inside: avoid;
+             }
+             #printable-area > table {
+                  page-break-inside: avoid;
+             }
+             .border-t {
+                   page-break-before: auto; /* Allow break before prescription/footer if needed */
+             }
+
         }
       `}</style>
     </div>

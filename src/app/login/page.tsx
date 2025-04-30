@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from "react";
@@ -5,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
-import { Eye, EyeOff, Sun } from "lucide-react"; // Added Sun icon for logo placeholder
+import { Eye, EyeOff } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +28,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
+import VisionClearLogo from "@/components/icons/VisionClearLogo"; // Import the logo
 
 // Define the Zod schema for validation
 const loginSchema = z.object({
@@ -75,10 +77,9 @@ export default function LoginPage() {
     <div className="flex items-center justify-center min-h-screen bg-secondary">
       <Card className="w-full max-w-sm shadow-lg">
         <CardHeader className="text-center">
-           {/* Placeholder for Logo */}
+           {/* Use the Logo Component */}
            <div className="flex justify-center mb-4">
-              {/* Replace Sun with actual SVG Logo */}
-              <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--primary))" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-glasses"><path d="M6 15h.01"/><path d="M18 15h.01"/><path d="M3 15a2 2 0 0 1-2-2V9a4 4 0 0 1 4-4h1"/><path d="M21 15a2 2 0 0 0 2-2V9a4 4 0 0 0-4-4h-1"/><path d="M7.5 11a1.5 1.5 0 0 1 1.5 1.5v0a1.5 1.5 0 0 1-1.5 1.5h-1A1.5 1.5 0 0 1 5 12.5v0A1.5 1.5 0 0 1 6.5 11h1Z"/><path d="M16.5 11a1.5 1.5 0 0 1 1.5 1.5v0a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5v0a1.5 1.5 0 0 1 1.5-1.5h1Z"/><path d="M10 15h4"/></svg>
+              <VisionClearLogo width={150} height={60} />
            </div>
           <CardTitle className="text-2xl font-bold text-primary">VisionClear Manager</CardTitle>
           <CardDescription>Enter your credentials to access the system.</CardDescription>
@@ -134,7 +135,7 @@ export default function LoginPage() {
           </Form>
         </CardContent>
         <CardFooter className="text-center text-xs text-muted-foreground">
-          &copy; {new Date().getFullYear()} VisionClear Optical Shop. All rights reserved.
+          &copy; {new Date().getFullYear()} Vision Clear Opticals. All rights reserved.
         </CardFooter>
       </Card>
     </div>
