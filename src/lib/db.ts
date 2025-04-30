@@ -15,7 +15,8 @@ import {
     writeBatch,
     QueryConstraint,
     collectionGroup,
-    runTransaction
+    runTransaction,
+    FirestoreError // Import FirestoreError
 } from "firebase/firestore";
 import { db } from "./firebase"; // Import the initialized Firestore instance
 import { format, getMonth, getYear, isEqual, startOfDay, endOfDay, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns";
@@ -192,15 +193,25 @@ export async function saveInvoice(data: Omit<InvoiceData, 'dateTime'> & { dateTi
   }
 }
 
-export async function saveProducts(invoiceId: string, products: Omit<ProductData, 'invoiceId'>[]): Promise<void> {
+export async function saveProducts(invoiceId: string, products: Omit<ProductData, 'invoiceId' | 'total'>[]): Promise<void> {
   console.log(`Saving ${products.length} products for invoice ${invoiceId} to Firestore:`);
   try {
     const batch = writeBatch(db);
     const productsRef = collection(db, INVOICES_COLLECTION, invoiceId, PRODUCTS_COLLECTION);
 
     products.forEach((product) => {
+      // Recalculate total just before saving, ensure price/quantity are numbers
+      const price = Number(product.price) || 0;
+      const quantity = Number(product.quantity) || 0;
+      const total = price * quantity;
+      const productWithTotal: ProductData = {
+          ...product,
+          price,
+          quantity,
+          total,
+      };
       const docRef = doc(productsRef); // Generate unique ID for each product document
-      batch.set(docRef, product);
+      batch.set(docRef, productWithTotal);
     });
 
     await batch.commit();
@@ -262,19 +273,19 @@ export async function findCustomers(criteria: SearchCriteria): Promise<CustomerS
             });
             // If no invoices match date criteria, no customers will be found (unless phone also matches)
             if (customerIdsFromInvoices.size === 0 && !criteria.phone) {
+                console.log("No invoices found matching date criteria, returning empty.");
                 return [];
             }
              // If phone is also provided, add the invoice constraint to the customer query
-             if (criteria.phone && customerIdsFromInvoices.size > 0) {
-                  // This might fetch more customers than needed if queried separately.
-                  // Firestore doesn't directly support OR queries efficiently across collections.
-                  // We'll filter the customer results later.
-            } else if (customerIdsFromInvoices.size > 0) {
-                 // Query for customers whose IDs are in the set. Max 10 elements for 'in' query.
-                 // For more IDs, multiple 'in' queries or fetching all and filtering might be needed.
-                 // Be mindful of Firestore query limitations.
+             if (criteria.phone && customerIdsFromInvoices.size === 0) {
+                // Phone provided but no invoices match date, so no results possible for combination
+                 console.log("Phone provided, but no invoices match date criteria, returning empty.");
+                return [];
+             } else if (customerIdsFromInvoices.size > 0) {
+                 // Query for customers whose IDs are in the set. Max 30 elements for 'in' query in Firestore.
+                 // Chunking logic for > 30 IDs.
                  const idChunks = Array.from(customerIdsFromInvoices).reduce((acc, item, index) => {
-                    const chunkIndex = Math.floor(index / 10); // Firestore 'in' limit is 10
+                    const chunkIndex = Math.floor(index / 30); // Firestore 'in' limit is 30
                     if (!acc[chunkIndex]) {
                         acc[chunkIndex] = [];
                     }
@@ -282,23 +293,31 @@ export async function findCustomers(criteria: SearchCriteria): Promise<CustomerS
                     return acc;
                  }, [] as string[][]);
 
-                 // Add 'in' constraints for each chunk
-                 customerQueryConstraints.push(where("__name__", "in", idChunks[0])); // Add first chunk
-                 // Add logic here if you have more than 10 customer IDs
-            }
+                 // Apply 'in' constraints or filter later if combined with phone
+                 if (!criteria.phone) {
+                     // If only filtering by date, apply 'in' directly
+                     customerQueryConstraints.push(where("__name__", "in", idChunks[0])); // Add first chunk
+                     // TODO: Handle multiple chunks if idChunks.length > 1
+                 }
+                 // If phone is also present, the customer query already includes phone,
+                 // we will filter the results afterwards to ensure ID is in customerIdsFromInvoices
+             }
         }
 
 
-        // Fetch customers based on phone and potentially filtered IDs
+        // Fetch customers based on constraints
+        console.log("Customer query constraints:", customerQueryConstraints);
         const customersQuery = query(collection(db, CUSTOMERS_COLLECTION), ...customerQueryConstraints);
         const customerSnapshots = await getDocs(customersQuery);
+        console.log(`Found ${customerSnapshots.size} potential customer documents.`);
 
         const resultsMap = new Map<string, CustomerSearchResult>();
 
         // Process customer results
         customerSnapshots.forEach(doc => {
-            // If we filtered by invoice and phone, double-check the customer ID is in the invoice set
+            // If filtering by invoice date and phone, ensure customer ID is in the invoice set
             if (filterByInvoice && criteria.phone && customerIdsFromInvoices && !customerIdsFromInvoices.has(doc.id)) {
+                console.log(`Skipping customer ${doc.id} because phone matched but not in invoice date results.`);
                 return; // Skip customer if they don't match both phone and date criteria
             }
              if (!resultsMap.has(doc.id)) {
@@ -313,25 +332,39 @@ export async function findCustomers(criteria: SearchCriteria): Promise<CustomerS
         });
 
         // Fetch earliest invoice date for each found customer (if needed for sorting/display)
-        // This requires another query per customer or a potentially large query across all invoices
-        // For simplicity, let's fetch invoices only for the customers found.
         const customerIds = Array.from(resultsMap.keys());
         if (customerIds.length > 0) {
-            // Again, handle 'in' query limit if necessary
-            const firstInvoiceQuery = query(
-                collection(db, INVOICES_COLLECTION),
-                where("customerId", "in", customerIds.slice(0, 10)), // Handle chunks if more than 10
-                orderBy("dateTime", "asc")
-            );
-            const firstInvoiceSnapshots = await getDocs(firstInvoiceQuery);
+            console.log(`Fetching first invoice date for ${customerIds.length} customers.`);
+             // Handle 'in' query limit (30) if necessary by chunking customerIds
+            const idChunks = customerIds.reduce((acc, item, index) => {
+                    const chunkIndex = Math.floor(index / 30); // Firestore 'in' limit is 30
+                    if (!acc[chunkIndex]) {
+                        acc[chunkIndex] = [];
+                    }
+                    acc[chunkIndex].push(item);
+                    return acc;
+            }, [] as string[][]);
 
             const firstInvoiceDates: Record<string, Date> = {};
-             firstInvoiceSnapshots.forEach(doc => {
-                 const data = doc.data() as InvoiceData;
-                 if (!firstInvoiceDates[data.customerId]) {
-                     firstInvoiceDates[data.customerId] = data.dateTime.toDate();
-                 }
-             });
+
+            for (const chunk of idChunks) {
+                const firstInvoiceQuery = query(
+                    collection(db, INVOICES_COLLECTION),
+                    where("customerId", "in", chunk),
+                    orderBy("dateTime", "asc")
+                    // No limit needed, Firestore fetches all matching in the chunk
+                );
+                const firstInvoiceSnapshots = await getDocs(firstInvoiceQuery);
+
+                firstInvoiceSnapshots.forEach(doc => {
+                    const data = doc.data() as InvoiceData;
+                    // Store only the *first* date encountered for each customer ID across chunks
+                    if (!firstInvoiceDates[data.customerId]) {
+                        firstInvoiceDates[data.customerId] = data.dateTime.toDate();
+                    }
+                });
+            }
+
 
             customerIds.forEach(id => {
                 const result = resultsMap.get(id);
@@ -351,11 +384,12 @@ export async function findCustomers(criteria: SearchCriteria): Promise<CustomerS
             return dateB - dateA; // Descending order
         });
 
+        console.log(`Returning ${finalResults.length} sorted customer results.`);
         return finalResults;
 
     } catch (error) {
         console.error("Error finding customers:", error);
-        throw new Error("Failed to search for customers.");
+        throw new Error(`Failed to search for customers: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
@@ -445,17 +479,22 @@ export async function deleteCustomer(customerId: string): Promise<void> {
         const prescriptionsQuery = query(collection(db, PRESCRIPTIONS_COLLECTION), where("customerId", "==", customerId));
         const prescriptionsSnap = await getDocs(prescriptionsQuery);
         prescriptionsSnap.forEach(doc => batch.delete(doc.ref));
+        console.log(`Marked ${prescriptionsSnap.size} prescriptions for deletion.`);
 
         // 2. Delete Invoices and their Products (subcollections)
         const invoicesQuery = query(collection(db, INVOICES_COLLECTION), where("customerId", "==", customerId));
         const invoicesSnap = await getDocs(invoicesQuery);
+        console.log(`Found ${invoicesSnap.size} invoices for deletion.`);
 
-        // Need to separately query and delete subcollections, which can be complex in batches.
-        // Fetch products for each invoice and add deletions to the batch.
+        // Need to separately query and delete subcollections for each invoice.
+        // This part cannot reliably be done in a single atomic batch if subcollections are large,
+        // but for typical invoice sizes, it should be okay. Consider Cloud Functions for large-scale deletes.
         for (const invoiceDoc of invoicesSnap.docs) {
+             console.log(`Marking products for invoice ${invoiceDoc.id} for deletion.`);
              const productsRef = collection(invoiceDoc.ref, PRODUCTS_COLLECTION);
              const productsSnap = await getDocs(productsRef);
              productsSnap.forEach(prodDoc => batch.delete(prodDoc.ref));
+             console.log(`Marked ${productsSnap.size} products for invoice ${invoiceDoc.id}.`);
              // Add invoice deletion to batch AFTER handling subcollection
              batch.delete(invoiceDoc.ref);
         }
@@ -464,6 +503,7 @@ export async function deleteCustomer(customerId: string): Promise<void> {
         // 3. Delete Customer document
         const customerDocRef = doc(db, CUSTOMERS_COLLECTION, customerId);
         batch.delete(customerDocRef);
+        console.log(`Marked customer document ${customerId} for deletion.`);
 
         // Commit the batch
         await batch.commit();
@@ -471,7 +511,11 @@ export async function deleteCustomer(customerId: string): Promise<void> {
 
     } catch (error) {
         console.error("Error deleting customer:", error);
-        throw new Error("Failed to delete customer and associated data.");
+         if (error instanceof FirestoreError) {
+             console.error(`Firestore Error Code: ${error.code}`);
+             console.error(`Firestore Error Message: ${error.message}`);
+         }
+        throw new Error(`Failed to delete customer and associated data: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
@@ -480,23 +524,52 @@ export async function getNextBillNumber(): Promise<string> {
     const counterRef = doc(db, BILL_COUNTER_DOC);
 
     try {
-        let nextNumber = 1;
+        let nextNumber: number;
         await runTransaction(db, async (transaction) => {
             const counterSnap = await transaction.get(counterRef);
             if (!counterSnap.exists()) {
-                console.log("Bill counter document not found, initializing.");
+                console.log("Bill counter document not found, initializing to 1.");
+                // IMPORTANT: Ensure the user/service account has permission to create this document.
                 transaction.set(counterRef, { lastNumber: 1 });
                 nextNumber = 1;
             } else {
                 const lastNumber = counterSnap.data().lastNumber;
-                nextNumber = lastNumber + 1;
-                transaction.update(counterRef, { lastNumber: nextNumber });
+                if (typeof lastNumber !== 'number' || !Number.isInteger(lastNumber)) {
+                    console.error("Invalid 'lastNumber' in counter document:", lastNumber, "Resetting to 1.");
+                    nextNumber = 1;
+                    transaction.set(counterRef, { lastNumber: 1 }); // Reset if invalid
+                } else {
+                    nextNumber = lastNumber + 1;
+                     console.log(`Last number was ${lastNumber}, setting next to ${nextNumber}.`);
+                    transaction.update(counterRef, { lastNumber: nextNumber });
+                }
             }
         });
-         return `INV-${nextNumber.toString().padStart(3, '0')}`;
+         // nextNumber should be defined after successful transaction
+         // Add defensive check just in case transaction logic fails silently (shouldn't happen)
+         if (typeof nextNumber! !== 'number') {
+             throw new Error("Transaction completed but next bill number is not defined.");
+         }
+         const formattedBillNumber = `INV-${nextNumber!.toString().padStart(3, '0')}`;
+         console.log("Returning next bill number:", formattedBillNumber);
+         return formattedBillNumber;
     } catch (error) {
-         console.error("Error fetching/updating bill number:", error);
+         console.error("Error fetching/updating bill number in transaction:", error);
+         let errorMessage = "Failed to get the next bill number.";
+          if (error instanceof FirestoreError) {
+             console.error(`Firestore Error Code: ${error.code}`);
+             console.error(`Firestore Error Message: ${error.message}`);
+             if (error.code === 'permission-denied') {
+                 errorMessage = "Permission denied when accessing bill counter. Check Firestore security rules for 'counters/billCounter'.";
+             } else {
+                 errorMessage = `Firestore error getting bill number: ${error.message}`;
+             }
+         } else if (error instanceof Error) {
+            errorMessage = `Error getting bill number: ${error.message}`;
+         }
          // Fallback or re-throw
-         throw new Error("Failed to get the next bill number.");
+         throw new Error(errorMessage);
     }
 }
+
+    

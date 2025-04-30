@@ -109,6 +109,7 @@ export default function NewBillPage() {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [formDataForConfirmation, setFormDataForConfirmation] = React.useState<BillFormValues | null>(null);
+  const [isBillNumberLoading, setIsBillNumberLoading] = React.useState(true); // State for bill number loading
 
 
   const form = useForm<BillFormValues>({
@@ -136,13 +137,21 @@ export default function NewBillPage() {
   // Fetch next bill number on component mount
   React.useEffect(() => {
     const fetchBillNumber = async () => {
+      setIsBillNumberLoading(true);
       try {
         const nextBillNo = await getNextBillNumber();
         form.setValue("billNumber", nextBillNo);
       } catch (error) {
         console.error("Failed to fetch bill number:", error);
-        toast({ title: "Error", description: "Could not fetch the next bill number.", variant: "destructive" });
-        // Consider disabling form submission if bill number fails
+        const errorMessage = error instanceof Error ? error.message : "Could not fetch the next bill number.";
+        toast({
+            title: "Error",
+            description: errorMessage, // Display more specific error
+            variant: "destructive"
+        });
+        // Consider disabling form submission if bill number fails (button is already disabled below)
+      } finally {
+        setIsBillNumberLoading(false);
       }
     };
     fetchBillNumber();
@@ -302,6 +311,8 @@ export default function NewBillPage() {
                 netPrice: formDataForConfirmation.netPrice,
                 advanceAmount: formDataForConfirmation.advanceAmount,
                 balanceAmount: formDataForConfirmation.balanceAmount,
+                // Include createdAt if needed, fetch it or use customerResult
+                 createdAt: customerResult.createdAt ? customerResult.createdAt.toDate() : new Date() // Example
             };
             await exportCustomerToExcel(excelData as any); // Pass data, might need type adjustment
         } catch (exportError) {
@@ -357,7 +368,7 @@ export default function NewBillPage() {
                   <FormItem>
                     <FormLabel>Bill Number</FormLabel>
                     <FormControl>
-                      <Input {...field} readOnly className="bg-muted"/>
+                      <Input {...field} readOnly className="bg-muted" placeholder={isBillNumberLoading ? "Loading..." : ""} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -654,10 +665,10 @@ export default function NewBillPage() {
                  {/* AlertDialog Trigger integrated with Submit Button */}
                 <AlertDialog>
                     <AlertDialogTrigger asChild>
-                        {/* Disable button if bill number hasn't loaded */}
-                        <Button type="submit" disabled={isSubmitting || !form.getValues("billNumber")} className="bg-accent hover:bg-accent/90 text-accent-foreground">
+                        {/* Disable button if bill number hasn't loaded or is currently loading */}
+                        <Button type="submit" disabled={isSubmitting || isBillNumberLoading || !form.getValues("billNumber")} className="bg-accent hover:bg-accent/90 text-accent-foreground">
                             <Printer className="mr-2 h-4 w-4" />
-                            {isSubmitting ? "Submitting..." : "Save & Print"}
+                            {isSubmitting ? "Submitting..." : (isBillNumberLoading ? "Loading Bill No..." : "Save & Print")}
                         </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
@@ -682,3 +693,5 @@ export default function NewBillPage() {
     </PageWrapper>
   );
 }
+
+    
