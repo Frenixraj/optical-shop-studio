@@ -1,16 +1,19 @@
+
 // This is a placeholder file for Excel export functionality.
 // You would need to install and use a library like 'xlsx' (SheetJS)
 // npm install xlsx
 
 // import * as XLSX from 'xlsx'; // Uncomment when xlsx is installed
 
+// Updated interface for Firestore data
 interface CustomerFullData {
-  id: number;
+  id: string; // Firestore ID is string
   name: string;
   phone: string;
-  // Add all other relevant fields from customer, prescription, invoice, product, transaction
+  createdAt?: Date; // Added creation date
+  // Add all other relevant fields from customer, prescription, invoice, product
   billNumber?: string;
-  dateTime?: Date;
+  dateTime?: Date; // Invoice/Add Date
   sph_re?: number | null;
   cyl_re?: number | null;
   axis_re?: number | null;
@@ -26,9 +29,7 @@ interface CustomerFullData {
   netPrice?: number;
   advanceAmount?: number;
   balanceAmount?: number;
-  lastTransactionDate?: Date;
-  lastTransactionAmount?: number;
-  lastTransactionType?: string;
+  // Transactions removed
 }
 
 export async function exportCustomerToExcel(data: CustomerFullData): Promise<void> {
@@ -39,24 +40,30 @@ export async function exportCustomerToExcel(data: CustomerFullData): Promise<voi
   try {
     // 1. Prepare data in the desired sheet format
     const wsData = [
-      ["Customer ID", "Name", "Phone", "Bill Number", "Date", "SPH RE", "CYL RE", "AXIS RE", "ADD RE", "PD RE", "SPH LE", "CYL LE", "AXIS LE", "ADD LE", "PD LE", "Products", "Discount", "Net Price", "Advance", "Balance", "Last Txn Date", "Last Txn Amount", "Last Txn Type"], // Header row
+      // Header Row - Adjust columns as needed
+      ["Customer ID", "Name", "Phone", "Created At", "Bill Number", "Invoice Date", "SPH RE", "CYL RE", "AXIS RE", "ADD RE", "PD RE", "SPH LE", "CYL LE", "AXIS LE", "ADD LE", "PD LE", "Products", "Discount", "Net Price", "Advance", "Balance"],
       [
-        data.id,
+        data.id, // String ID
         data.name,
         data.phone,
+        data.createdAt ? data.createdAt.toLocaleDateString() : '', // Format date
         data.billNumber ?? '',
-        data.dateTime ? data.dateTime.toLocaleDateString() : '',
+        data.dateTime ? data.dateTime.toLocaleDateString() : '', // Format date
         data.sph_re ?? '',
         data.cyl_re ?? '',
-        // ... other fields
+        data.axis_re ?? '',
+        data.add_re ?? '',
+        data.pd_re ?? '',
+        data.sph_le ?? '',
+        data.cyl_le ?? '',
+        data.axis_le ?? '',
+        data.add_le ?? '',
+        data.pd_le ?? '',
         data.products ?? '',
         data.discount ?? '',
         data.netPrice ?? '',
         data.advanceAmount ?? '',
         data.balanceAmount ?? '',
-        data.lastTransactionDate ? data.lastTransactionDate.toLocaleDateString() : '',
-        data.lastTransactionAmount ?? '',
-        data.lastTransactionType ?? '',
       ]
     ];
 
@@ -68,13 +75,10 @@ export async function exportCustomerToExcel(data: CustomerFullData): Promise<voi
     // 3. Define filename (e.g., based on customer name and date)
     const filename = `Customer_${data.name.replace(/\s+/g, '_')}_${data.id}.xlsx`;
 
-    // 4. Trigger download in the browser (this part is client-side specific)
-    // This function needs to be callable from a client component or Server Action that returns the file buffer.
-    // XLSX.writeFile(wb, filename); // This works in Node.js or browser download trigger
+    // 4. Trigger download in the browser (client-side specific)
+    // XLSX.writeFile(wb, filename); // Use if running where download can be triggered
 
     console.log(`Simulating Excel file generation: ${filename}`);
-    // In a real scenario, you might return a buffer from a server action
-    // or use XLSX.writeFile if this runs in a context where it can trigger downloads.
 
   } catch (error) {
     console.error("Error exporting to Excel:", error);
@@ -87,11 +91,50 @@ export async function exportCustomerToExcel(data: CustomerFullData): Promise<voi
   console.log("Placeholder: Excel export function executed.");
 }
 
-// You might need another function to handle exporting search results (multiple customers)
+// Updated function for exporting multiple customers
 export async function exportCustomersToExcel(data: CustomerFullData[]): Promise<void> {
    console.log("Exporting multiple customers to Excel (placeholder):", data.length);
-    // Similar logic as exportCustomerToExcel, but map over the array 'data'
-    // to create multiple rows in the wsData array.
+    // **Actual Implementation using 'xlsx' would look something like this:**
+    /*
+    try {
+        const wsData = [
+            // Header Row - Adjust columns as needed
+            ["Customer ID", "Name", "Phone", "Created At", "Last Bill No", "Last Invoice Date", "SPH RE", "CYL RE", "AXIS RE", /* ... other headers ... */ ,"Balance"],
+        ];
+
+        // Map data array to rows
+        data.forEach(customer => {
+            wsData.push([
+                customer.id, // String ID
+                customer.name,
+                customer.phone,
+                customer.createdAt ? customer.createdAt.toLocaleDateString() : '',
+                customer.billNumber ?? '',
+                customer.dateTime ? customer.dateTime.toLocaleDateString() : '',
+                customer.sph_re ?? '',
+                customer.cyl_re ?? '',
+                customer.axis_re ?? '',
+                // ... other customer fields ...
+                customer.balanceAmount ?? '',
+            ]);
+        });
+
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "CustomerList"); // Sheet name
+
+        const filename = `Customer_Export_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+        // Trigger download
+        // XLSX.writeFile(wb, filename);
+
+        console.log(`Simulating bulk Excel file generation: ${filename}`);
+
+    } catch (error) {
+        console.error("Error exporting multiple customers to Excel:", error);
+        throw new Error("Failed to export customer list to Excel.");
+    }
+    */
    await new Promise(resolve => setTimeout(resolve, 500));
    console.log("Placeholder: Bulk Excel export function executed.");
 }

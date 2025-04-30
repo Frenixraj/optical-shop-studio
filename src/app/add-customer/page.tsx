@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import * as React from "react";
@@ -58,8 +57,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { saveCustomer, savePrescription, saveInvoice, saveProducts } from "@/lib/db"; // Reuse DB functions
-import { exportCustomerToExcel } from "@/lib/excel"; // Placeholder Excel function
+// Import Firestore functions
+import { saveCustomer, savePrescription, saveInvoice, saveProducts } from "@/lib/db";
+// Excel export might need refactoring
+import { exportCustomerToExcel } from "@/lib/excel";
 
 // --- Zod Schema Definition ---
 // Expanded schema similar to New Bill
@@ -204,20 +205,20 @@ export default function AddCustomerPage() {
 
     setIsSubmitting(true);
     try {
-        // 1. Save Customer Core Data
+        // 1. Save Customer Core Data (Firestore handles check for existing)
         const customerResult = await saveCustomer({
             name: formDataForConfirmation.customerName,
             phone: formDataForConfirmation.phoneNumber,
         });
-        const customerId = customerResult.id;
+        const customerId = customerResult.id; // Firestore returns string ID
 
         // 2. Save Prescription (if any data exists)
          const hasPrescriptionData = Object.entries(formDataForConfirmation).some(([key, value]) =>
-            (key.startsWith('sph_') || key.startsWith('cyl_') || key.startsWith('axis_') || key.startsWith('add_') || key.startsWith('pd_')) && value != null
+            (key.startsWith('sph_') || key.startsWith('cyl_') || key.startsWith('axis_') || key.startsWith('add_') || key.startsWith('pd_')) && value != null && value !== ''
         );
         if (hasPrescriptionData) {
             await savePrescription({
-                customerId: customerId,
+                customerId: customerId, // Pass string ID
                 sph_re: formDataForConfirmation.sph_re,
                 cyl_re: formDataForConfirmation.cyl_re,
                 axis_re: formDataForConfirmation.axis_re,
@@ -233,47 +234,57 @@ export default function AddCustomerPage() {
         }
 
         // 3. Save Invoice-like record (using a placeholder bill number)
+        // We still save an 'invoice' to store the financial transaction context
         const placeholderBillNumber = `CUST_ADD_${customerId}_${Date.now()}`;
         const invoiceResult = await saveInvoice({
-            customerId: customerId,
+            customerId: customerId, // Pass string ID
             billNumber: placeholderBillNumber, // Use placeholder
-            dateTime: formDataForConfirmation.dateTime,
+            dateTime: formDataForConfirmation.dateTime, // Pass Date object
             discount: formDataForConfirmation.discount,
             netPrice: formDataForConfirmation.netPrice,
             advanceAmount: formDataForConfirmation.advanceAmount,
             balanceAmount: formDataForConfirmation.balanceAmount,
         });
-        const invoiceId = invoiceResult.id;
+        const invoiceId = invoiceResult.id; // Firestore returns string ID
 
-        // 4. Save Products linked to the invoice record
-        const productsToSave = formDataForConfirmation.products.map(p => ({ ...p, invoiceId }));
-        await saveProducts(productsToSave);
+        // 4. Save Products linked to the invoice record (as subcollection)
+        const productsToSave = formDataForConfirmation.products.map(({ total, ...prod }) => prod);
+        await saveProducts(invoiceId, productsToSave); // Pass invoice ID and products
 
-        // 5. Prepare data for Excel export (Customer + Prescription + Products + Payment)
-        const excelData = {
-            id: customerId,
-            name: formDataForConfirmation.customerName,
-            phone: formDataForConfirmation.phoneNumber,
-            // Use placeholder bill number or leave blank in Excel? Using placeholder for now.
-            billNumber: placeholderBillNumber,
-            dateTime: formDataForConfirmation.dateTime, // Customer add date
-            sph_re: formDataForConfirmation.sph_re,
-            cyl_re: formDataForConfirmation.cyl_re,
-            axis_re: formDataForConfirmation.axis_re,
-            add_re: formDataForConfirmation.add_re,
-            pd_re: formDataForConfirmation.pd_re,
-            sph_le: formDataForConfirmation.sph_le,
-            cyl_le: formDataForConfirmation.cyl_le,
-            axis_le: formDataForConfirmation.axis_le,
-            add_le: formDataForConfirmation.add_le,
-            pd_le: formDataForConfirmation.pd_le,
-            products: formDataForConfirmation.products.map(p => `${p.name} (Qty: ${p.quantity}, Price: ${p.price})`).join('; '),
-            discount: formDataForConfirmation.discount,
-            netPrice: formDataForConfirmation.netPrice,
-            advanceAmount: formDataForConfirmation.advanceAmount,
-            balanceAmount: formDataForConfirmation.balanceAmount,
-        };
-        await exportCustomerToExcel(excelData); // Placeholder call
+
+         // 5. Prepare data for Excel export (Optional - consider if needed)
+        try {
+            const excelData = {
+                id: customerId, // String ID
+                name: formDataForConfirmation.customerName,
+                phone: formDataForConfirmation.phoneNumber,
+                billNumber: placeholderBillNumber, // Use placeholder bill number
+                dateTime: formDataForConfirmation.dateTime, // Customer add date
+                sph_re: formDataForConfirmation.sph_re,
+                cyl_re: formDataForConfirmation.cyl_re,
+                axis_re: formDataForConfirmation.axis_re,
+                add_re: formDataForConfirmation.add_re,
+                pd_re: formDataForConfirmation.pd_re,
+                sph_le: formDataForConfirmation.sph_le,
+                cyl_le: formDataForConfirmation.cyl_le,
+                axis_le: formDataForConfirmation.axis_le,
+                add_le: formDataForConfirmation.add_le,
+                pd_le: formDataForConfirmation.pd_le,
+                products: formDataForConfirmation.products.map(p => `${p.name} (Qty: ${p.quantity}, Price: ${p.price})`).join('; '),
+                discount: formDataForConfirmation.discount,
+                netPrice: formDataForConfirmation.netPrice,
+                advanceAmount: formDataForConfirmation.advanceAmount,
+                balanceAmount: formDataForConfirmation.balanceAmount,
+            };
+            await exportCustomerToExcel(excelData as any); // Placeholder call, adjust type if needed
+        } catch (exportError) {
+             console.error("Excel Export Error:", exportError);
+             toast({
+                title: "Warning",
+                description: "Data saved to database, but Excel export failed.",
+                variant: "default",
+            });
+        }
 
 
         toast({
@@ -286,9 +297,10 @@ export default function AddCustomerPage() {
 
     } catch (error) {
         console.error("Submission Error:", error);
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
         toast({
             title: "Error",
-            description: "Failed to save customer data. Please try again.",
+            description: `Failed to save customer data: ${errorMessage}`,
             variant: "destructive",
         });
     } finally {
@@ -429,8 +441,8 @@ export default function AddCustomerPage() {
                     <TableHead className="w-2/5">Product Name</TableHead>
                     <TableHead>Price</TableHead>
                     <TableHead>Quantity</TableHead>
-                    <TableHead>Total Price</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead className="text-right">Total Price</TableHead> {/* Align right */}
+                    <TableHead className="text-center">Action</TableHead> {/* Center align */}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -478,7 +490,7 @@ export default function AddCustomerPage() {
                           )}
                         />
                       </TableCell>
-                       <TableCell>
+                       <TableCell className="text-right"> {/* Align right */}
                         <FormField
                           control={form.control}
                           name={`products.${index}.total`}
@@ -492,7 +504,7 @@ export default function AddCustomerPage() {
                           )}
                         />
                       </TableCell>
-                      <TableCell>
+                       <TableCell className="text-center"> {/* Center align */}
                         <Button
                           type="button"
                           variant="destructive"
@@ -501,6 +513,7 @@ export default function AddCustomerPage() {
                           disabled={fields.length <= 1} // Prevent removing the last row
                         >
                           <Trash2 className="h-4 w-4" />
+                           <span className="sr-only">Remove Product</span>
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -540,7 +553,7 @@ export default function AddCustomerPage() {
                     control={form.control}
                     name="discount"
                     render={({ field }) => (
-                    <FormItem className="md:col-start-4"> {/* Changed col-start */}
+                    <FormItem className="md:col-start-4"> {/* Align to the 4th column */}
                         <FormControl>
                             <Input type="number" step="0.01" placeholder="0.00" {...field} className="text-right" onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}/>
                         </FormControl>
@@ -571,7 +584,7 @@ export default function AddCustomerPage() {
                     control={form.control}
                     name="advanceAmount"
                     render={({ field }) => (
-                    <FormItem className="md:col-start-4"> {/* Changed col-start */}
+                    <FormItem className="md:col-start-4"> {/* Align to the 4th column */}
                         <FormControl>
                             <Input type="number" step="0.01" placeholder="0.00" {...field} className="text-right" onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}/>
                         </FormControl>
@@ -628,6 +641,3 @@ export default function AddCustomerPage() {
     </PageWrapper>
   );
 }
-
-
-

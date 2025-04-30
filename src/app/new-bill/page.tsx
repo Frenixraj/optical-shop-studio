@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import * as React from "react";
@@ -58,7 +57,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { saveCustomer, savePrescription, saveInvoice, saveProducts, getNextBillNumber } from "@/lib/db"; // Placeholder DB functions
+// Import Firestore functions
+import { saveCustomer, savePrescription, saveInvoice, saveProducts, getNextBillNumber } from "@/lib/db";
+// Excel export might need refactoring depending on how data is fetched now
 import { exportCustomerToExcel } from "@/lib/excel"; // Placeholder Excel function
 
 // --- Zod Schema Definition ---
@@ -141,6 +142,7 @@ export default function NewBillPage() {
       } catch (error) {
         console.error("Failed to fetch bill number:", error);
         toast({ title: "Error", description: "Could not fetch the next bill number.", variant: "destructive" });
+        // Consider disabling form submission if bill number fails
       }
     };
     fetchBillNumber();
@@ -149,7 +151,7 @@ export default function NewBillPage() {
 
 
   // --- Calculation Logic ---
-  const calculateTotals = React.useCallback(() => {
+   const calculateTotals = React.useCallback(() => {
     const products = form.getValues("products");
     let subTotal = 0;
     products.forEach((product, index) => {
@@ -180,17 +182,13 @@ export default function NewBillPage() {
   // Recalculate when products (price/quantity), discount, or advance changes
   React.useEffect(() => {
     const subscription = form.watch((value, { name, type }) => {
-      // Check if the change is from user input or programmatic setValue
-      // Also check if the name is defined to avoid initial renders triggering this
       if (type !== 'change' || !name) return;
 
-      // Only recalculate if a relevant *input* field changed,
-      // not the calculated 'total', 'netPrice', or 'balanceAmount' fields themselves.
       const isProductInput = name?.startsWith("products") && (name.endsWith(".price") || name.endsWith(".quantity"));
       const isPaymentInput = name === "discount" || name === "advanceAmount";
 
       if (isProductInput || isPaymentInput) {
-         // Use requestAnimationFrame to defer calculation slightly
+        // Use requestAnimationFrame to defer calculation slightly
         requestAnimationFrame(() => {
              calculateTotals();
         });
@@ -225,21 +223,21 @@ export default function NewBillPage() {
 
     setIsSubmitting(true);
     try {
-        // 1. Save Customer
+        // 1. Save Customer (Firestore handles check for existing)
         const customerResult = await saveCustomer({
             name: formDataForConfirmation.customerName,
             phone: formDataForConfirmation.phoneNumber,
         });
-        const customerId = customerResult.id;
+        const customerId = customerResult.id; // Firestore returns string ID
 
         // 2. Save Prescription (if any data exists)
         const hasPrescriptionData = Object.entries(formDataForConfirmation).some(([key, value]) =>
-            (key.startsWith('sph_') || key.startsWith('cyl_') || key.startsWith('axis_') || key.startsWith('add_') || key.startsWith('pd_')) && value != null
+            (key.startsWith('sph_') || key.startsWith('cyl_') || key.startsWith('axis_') || key.startsWith('add_') || key.startsWith('pd_')) && value != null && value !== '' // Check for non-empty too
         );
 
         if (hasPrescriptionData) {
             await savePrescription({
-                customerId: customerId,
+                customerId: customerId, // Pass string ID
                 sph_re: formDataForConfirmation.sph_re,
                 cyl_re: formDataForConfirmation.cyl_re,
                 axis_re: formDataForConfirmation.axis_re,
@@ -250,67 +248,82 @@ export default function NewBillPage() {
                 axis_le: formDataForConfirmation.axis_le,
                 add_le: formDataForConfirmation.add_le,
                 pd_le: formDataForConfirmation.pd_le,
-                // Ensure prescriptionDate is saved if needed, maybe pass from form or set here
-                 prescriptionDate: new Date(), // Or formDataForConfirmation.dateTime if appropriate
+                prescriptionDate: new Date(), // Save prescription date as current time
             });
         }
 
         // 3. Save Invoice
         const invoiceResult = await saveInvoice({
-            customerId: customerId,
+            customerId: customerId, // Pass string ID
             billNumber: formDataForConfirmation.billNumber,
-            dateTime: formDataForConfirmation.dateTime,
+            dateTime: formDataForConfirmation.dateTime, // Pass Date object
             discount: formDataForConfirmation.discount,
             netPrice: formDataForConfirmation.netPrice,
             advanceAmount: formDataForConfirmation.advanceAmount,
             balanceAmount: formDataForConfirmation.balanceAmount,
         });
-        const invoiceId = invoiceResult.id;
+        const invoiceId = invoiceResult.id; // Firestore returns string ID
 
 
-        // 4. Save Products
-        const productsToSave = formDataForConfirmation.products.map(p => ({ ...p, invoiceId }));
-        await saveProducts(productsToSave);
+        // 4. Save Products (as subcollection)
+        // Remove 'total' before saving if it's just for display
+        const productsToSave = formDataForConfirmation.products.map(({ total, ...prod }) => prod);
+        await saveProducts(invoiceId, productsToSave); // Pass invoice ID and products array
 
-       // 5. Prepare data for Excel export (Combine data as needed)
-       const excelData = {
-            id: customerId,
-            name: formDataForConfirmation.customerName,
-            phone: formDataForConfirmation.phoneNumber,
-            billNumber: formDataForConfirmation.billNumber,
-            dateTime: formDataForConfirmation.dateTime,
-            sph_re: formDataForConfirmation.sph_re,
-            cyl_re: formDataForConfirmation.cyl_re,
-            axis_re: formDataForConfirmation.axis_re,
-            add_re: formDataForConfirmation.add_re,
-            pd_re: formDataForConfirmation.pd_re,
-            sph_le: formDataForConfirmation.sph_le,
-            cyl_le: formDataForConfirmation.cyl_le,
-            axis_le: formDataForConfirmation.axis_le,
-            add_le: formDataForConfirmation.add_le,
-            pd_le: formDataForConfirmation.pd_le,
-            products: formDataForConfirmation.products.map(p => `${p.name} (Qty: ${p.quantity}, Price: ${p.price})`).join('; '), // Example combining products
-            discount: formDataForConfirmation.discount,
-            netPrice: formDataForConfirmation.netPrice,
-            advanceAmount: formDataForConfirmation.advanceAmount,
-            balanceAmount: formDataForConfirmation.balanceAmount,
-            // Add transaction data if needed later for Add Customer page
-        };
-        await exportCustomerToExcel(excelData); // Placeholder call
+
+       // 5. Excel export (might need adjustment based on data structure)
+       // Consider if Excel export is still needed or if Firestore is the primary source.
+       // Fetching full data again for export might be inefficient.
+       try {
+            const excelData = {
+                // Map form data for export - Note: IDs are now strings
+                id: customerId, // Customer ID is now string
+                name: formDataForConfirmation.customerName,
+                phone: formDataForConfirmation.phoneNumber,
+                billNumber: formDataForConfirmation.billNumber,
+                dateTime: formDataForConfirmation.dateTime, // Pass Date
+                sph_re: formDataForConfirmation.sph_re,
+                cyl_re: formDataForConfirmation.cyl_re,
+                axis_re: formDataForConfirmation.axis_re,
+                add_re: formDataForConfirmation.add_re,
+                pd_re: formDataForConfirmation.pd_re,
+                sph_le: formDataForConfirmation.sph_le,
+                cyl_le: formDataForConfirmation.cyl_le,
+                axis_le: formDataForConfirmation.axis_le,
+                add_le: formDataForConfirmation.add_le,
+                pd_le: formDataForConfirmation.pd_le,
+                products: formDataForConfirmation.products.map(p => `${p.name} (Qty: ${p.quantity}, Price: ${p.price})`).join('; '), // Example combining products
+                discount: formDataForConfirmation.discount,
+                netPrice: formDataForConfirmation.netPrice,
+                advanceAmount: formDataForConfirmation.advanceAmount,
+                balanceAmount: formDataForConfirmation.balanceAmount,
+            };
+            await exportCustomerToExcel(excelData as any); // Pass data, might need type adjustment
+        } catch (exportError) {
+            console.error("Excel Export Error:", exportError);
+            // Non-fatal, show toast but don't block main success flow
+             toast({
+                title: "Warning",
+                description: "Data saved to database, but Excel export failed.",
+                variant: "default", // Use default or a specific warning style
+            });
+        }
+
 
         toast({
             title: "Success",
             description: "Invoice and customer data saved successfully.",
         });
 
-        // Redirect to print page (pass necessary data via query params or state management)
-        router.push(`/print?invoiceId=${invoiceId}&customerId=${customerId}`); // Example redirection
+        // Redirect to print page (pass string IDs)
+        router.push(`/print?invoiceId=${invoiceId}&customerId=${customerId}`); // Pass string IDs
 
     } catch (error) {
         console.error("Submission Error:", error);
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
         toast({
             title: "Error",
-            description: "Failed to save data. Please try again.",
+            description: `Failed to save data: ${errorMessage}`,
             variant: "destructive",
         });
     } finally {
@@ -465,8 +478,8 @@ export default function NewBillPage() {
                     <TableHead className="w-2/5">Product Name</TableHead>
                     <TableHead>Price</TableHead>
                     <TableHead>Quantity</TableHead>
-                    <TableHead>Total Price</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead className="text-right">Total Price</TableHead> {/* Align right */}
+                    <TableHead className="text-center">Action</TableHead> {/* Center align */}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -514,7 +527,7 @@ export default function NewBillPage() {
                           )}
                         />
                       </TableCell>
-                       <TableCell>
+                       <TableCell className="text-right"> {/* Align right */}
                         <FormField
                           control={form.control}
                           name={`products.${index}.total`}
@@ -528,7 +541,7 @@ export default function NewBillPage() {
                           )}
                         />
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="text-center"> {/* Center align */}
                         <Button
                           type="button"
                           variant="destructive"
@@ -537,6 +550,7 @@ export default function NewBillPage() {
                           disabled={fields.length <= 1} // Prevent removing the last row
                         >
                           <Trash2 className="h-4 w-4" />
+                           <span className="sr-only">Remove Product</span>
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -576,7 +590,7 @@ export default function NewBillPage() {
                     control={form.control}
                     name="discount"
                     render={({ field }) => (
-                    <FormItem className="md:col-start-4"> {/* Changed col-start */}
+                    <FormItem className="md:col-start-4"> {/* Align to the 4th column */}
                         <FormControl>
                             <Input type="number" step="0.01" placeholder="0.00" {...field} className="text-right" onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}/>
                         </FormControl>
@@ -607,7 +621,7 @@ export default function NewBillPage() {
                     control={form.control}
                     name="advanceAmount"
                     render={({ field }) => (
-                    <FormItem className="md:col-start-4"> {/* Changed col-start */}
+                    <FormItem className="md:col-start-4"> {/* Align to the 4th column */}
                         <FormControl>
                             <Input type="number" step="0.01" placeholder="0.00" {...field} className="text-right" onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}/>
                         </FormControl>
@@ -635,7 +649,8 @@ export default function NewBillPage() {
                  {/* AlertDialog Trigger integrated with Submit Button */}
                 <AlertDialog>
                     <AlertDialogTrigger asChild>
-                        <Button type="submit" disabled={isSubmitting} className="bg-accent hover:bg-accent/90 text-accent-foreground">
+                        {/* Disable button if bill number hasn't loaded */}
+                        <Button type="submit" disabled={isSubmitting || !form.getValues("billNumber")} className="bg-accent hover:bg-accent/90 text-accent-foreground">
                             <Printer className="mr-2 h-4 w-4" />
                             {isSubmitting ? "Submitting..." : "Save & Print"}
                         </Button>
@@ -644,7 +659,7 @@ export default function NewBillPage() {
                         <AlertDialogHeader>
                         <AlertDialogTitle>Confirm Submission</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Are you sure you want to save this bill and prescription? This action will store the data and prepare it for printing.
+                            Are you sure you want to save this bill and prescription? This action will store the data in the database and prepare it for printing.
                         </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -662,8 +677,3 @@ export default function NewBillPage() {
     </PageWrapper>
   );
 }
-
-
-
-
-

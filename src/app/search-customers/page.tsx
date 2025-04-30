@@ -63,7 +63,9 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton"; // For loading state
-import { findCustomers, deleteCustomer, getCustomerDetails } from "@/lib/db"; // Renamed function
+// Import Firestore functions and types
+import { findCustomers, deleteCustomer, getCustomerDetails, CustomerSearchResult, FullCustomerData } from "@/lib/db";
+// Excel export needs adjustment
 import { exportCustomersToExcel } from "@/lib/excel";
 import { cn } from "@/lib/utils";
 
@@ -74,27 +76,22 @@ const searchSchema = z.object({
   searchDate: z.date().optional().nullable(),
   searchMonth: z.coerce.number().min(1).max(12).optional().nullable(), // Allow clearing
   searchYear: z.coerce.number().min(1900).max(currentYear + 5).optional().nullable(), // Allow clearing
-}).refine(data => !!data.phoneNumber || !!data.searchDate || (!!data.searchMonth && !!data.searchYear), {
-  message: "Please provide a phone number or select a date, or both month and year.",
+}).refine(data => !!data.phoneNumber || !!data.searchDate || (!!data.searchMonth && !!data.searchYear) || !!data.searchYear, { // Allow searching by just year too
+  message: "Please provide a phone number or select a date, or month/year combination.",
   // Apply this validation at the root level or specific fields if needed
 });
 type SearchFormValues = z.infer<typeof searchSchema>;
 
-// --- Data Types --- (Align with db.ts return types)
-interface CustomerResult {
-  id: number;
-  name: string;
-  phone: string;
-  // Add relevant date field if possible from DB query (e.g., firstInvoiceDate)
-  firstInvoiceDate?: Date | string | null;
-}
+// --- Data Types ---
+// CustomerSearchResult is imported from db.ts
 
+// Interface for Excel export data (might need adjustment based on export lib)
 interface FullCustomerDataForExcel {
-   id: number;
+   id: string; // Firestore ID
     name: string;
     phone: string;
     billNumber?: string;
-    dateTime?: Date;
+    dateTime?: Date; // Already Date object
     sph_re?: number | null;
     cyl_re?: number | null;
     axis_re?: number | null;
@@ -110,9 +107,10 @@ interface FullCustomerDataForExcel {
     netPrice?: number;
     advanceAmount?: number;
     balanceAmount?: number;
-    lastTransactionDate?: Date;
-    lastTransactionAmount?: number;
-    lastTransactionType?: string;
+    // lastTransactionDate?: Date; // Transactions removed
+    // lastTransactionAmount?: number;
+    // lastTransactionType?: string;
+    createdAt?: Date; // Include creation date
 }
 
 
@@ -121,9 +119,9 @@ export default function SearchCustomersPage() {
   useAuth(); // Protect the route
   const router = useRouter();
   const { toast } = useToast();
-  const [searchResults, setSearchResults] = React.useState<CustomerResult[]>([]);
+  const [searchResults, setSearchResults] = React.useState<CustomerSearchResult[]>([]);
   const [isLoading, setIsLoading] = React.useState(false);
-  const [isDeleting, setIsDeleting] = React.useState<number | null>(null); // Store ID of customer being deleted
+  const [isDeleting, setIsDeleting] = React.useState<string | null>(null); // Store string ID of customer being deleted
   const [isExporting, setIsExporting] = React.useState(false);
 
   const form = useForm<SearchFormValues>({
@@ -140,22 +138,15 @@ export default function SearchCustomersPage() {
     setIsLoading(true);
     setSearchResults([]); // Clear previous results
     try {
-       // Prepare search criteria
-       const criteria: { phone?: string; date?: Date | null; month?: number | null; year?: number | null } = {};
-       if (data.phoneNumber) criteria.phone = data.phoneNumber;
-       if (data.searchDate) criteria.date = data.searchDate;
-       if (data.searchMonth) criteria.month = data.searchMonth;
-       if (data.searchYear) criteria.year = data.searchYear;
+       // Prepare search criteria (pass directly to Firestore function)
+       const criteria = {
+           phone: data.phoneNumber || undefined, // Pass undefined if empty
+           date: data.searchDate,
+           month: data.searchMonth,
+           year: data.searchYear
+       };
 
-      const results = await findCustomers(criteria); // Use the updated function
-
-      // Sort results by firstInvoiceDate if available (newest first)
-       results.sort((a, b) => {
-            const dateA = a.firstInvoiceDate ? new Date(a.firstInvoiceDate).getTime() : 0;
-            const dateB = b.firstInvoiceDate ? new Date(b.firstInvoiceDate).getTime() : 0;
-            return dateB - dateA; // Descending order
-       });
-
+      const results = await findCustomers(criteria); // Use the updated Firestore function
 
       setSearchResults(results);
       if (results.length === 0) {
@@ -163,7 +154,8 @@ export default function SearchCustomersPage() {
       }
     } catch (error) {
       console.error("Search Error:", error);
-      toast({ title: "Error", description: "Failed to search for customers.", variant: "destructive" });
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      toast({ title: "Error", description: `Failed to search for customers: ${errorMessage}`, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
@@ -179,25 +171,26 @@ export default function SearchCustomersPage() {
         setSearchResults([]); // Also clear results
     };
 
-  const handleDelete = async (customerId: number) => {
+  const handleDelete = async (customerId: string) => {
     setIsDeleting(customerId);
     try {
-      await deleteCustomer(customerId);
+      await deleteCustomer(customerId); // Use Firestore delete function
       setSearchResults(prevResults => prevResults.filter(customer => customer.id !== customerId));
       toast({ title: "Success", description: "Customer deleted successfully." });
     } catch (error) {
       console.error("Delete Error:", error);
-      toast({ title: "Error", description: "Failed to delete customer.", variant: "destructive" });
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      toast({ title: "Error", description: `Failed to delete customer: ${errorMessage}`, variant: "destructive" });
     } finally {
       setIsDeleting(null);
     }
   };
 
-  const handleEdit = (customerId: number) => {
+  const handleEdit = (customerId: string) => {
     router.push(`/edit-customer/${customerId}`);
   };
 
-   const handleViewDetails = (customerId: number) => {
+   const handleViewDetails = (customerId: string) => {
     router.push(`/view-customer/${customerId}`);
   };
 
@@ -210,27 +203,29 @@ export default function SearchCustomersPage() {
       setIsExporting(true);
       try {
           // Fetch full details for all customers in the search results
+          // Note: This can be inefficient for large result sets. Consider server-side generation or pagination.
           const fullDataPromises = searchResults.map(customer => getCustomerDetails(customer.id));
           const fullDataResults = await Promise.all(fullDataPromises);
 
           const excelData: FullCustomerDataForExcel[] = fullDataResults
-            .filter((data): data is NonNullable<Awaited<ReturnType<typeof getCustomerDetails>>> => data !== null) // Type guard and filter nulls
+            .filter((data): data is NonNullable<FullCustomerData> => data !== null) // Type guard and filter nulls
             .map(data => {
-                // Sort invoices and transactions to get the latest/relevant ones
-                const sortedInvoices = data.invoices?.sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime()) || [];
-                const sortedTransactions = data.transactions?.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()) || [];
-                const sortedPrescriptions = data.prescriptions?.sort((a, b) => new Date(b.prescriptionDate || 0).getTime() - new Date(a.prescriptionDate || 0).getTime()) || [];
+                // Sort invoices and prescriptions to get the latest/relevant ones
+                const sortedInvoices = data.invoices?.sort((a, b) => b.dateTime.getTime() - a.dateTime.getTime()) || [];
+                // const sortedTransactions = data.transactions?.sort((a, b) => b.date.getTime() - a.date.getTime()) || []; // Transactions removed
+                const sortedPrescriptions = data.prescriptions?.sort((a, b) => (b.prescriptionDate?.getTime() ?? 0) - (a.prescriptionDate?.getTime() ?? 0)) || [];
 
                 const latestInvoice = sortedInvoices[0];
-                const latestTransaction = sortedTransactions[0];
+                // const latestTransaction = sortedTransactions[0]; // Transactions removed
                 const latestPrescription = sortedPrescriptions[0];
 
                 return {
                     id: data.id,
                     name: data.name,
                     phone: data.phone,
+                    createdAt: data.createdAt, // Include creation date
                     billNumber: latestInvoice?.billNumber,
-                    dateTime: latestInvoice?.dateTime, // Use latest invoice date as primary date maybe?
+                    dateTime: latestInvoice?.dateTime, // Use latest invoice date
                     sph_re: latestPrescription?.sph_re,
                     cyl_re: latestPrescription?.cyl_re,
                     axis_re: latestPrescription?.axis_re,
@@ -246,18 +241,17 @@ export default function SearchCustomersPage() {
                     netPrice: latestInvoice?.netPrice,
                     advanceAmount: latestInvoice?.advanceAmount,
                     balanceAmount: latestInvoice?.balanceAmount,
-                    lastTransactionDate: latestTransaction?.date,
-                    lastTransactionAmount: latestTransaction?.amount,
-                    lastTransactionType: latestTransaction?.type,
+                    // Transaction fields removed
                 };
             });
 
 
-          await exportCustomersToExcel(excelData); // Call the bulk export function
+          await exportCustomersToExcel(excelData as any); // Call the bulk export function, adjust type if needed
           toast({ title: "Export Started", description: "Customer data export to Excel has started." });
       } catch (error) {
           console.error("Export Error:", error);
-          toast({ title: "Error", description: "Failed to export customer data.", variant: "destructive" });
+          const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+          toast({ title: "Error", description: `Failed to export customer data: ${errorMessage}`, variant: "destructive" });
       } finally {
           setIsExporting(false);
       }
@@ -279,7 +273,7 @@ export default function SearchCustomersPage() {
       <Card className="mb-8">
         <CardHeader>
           <CardTitle>Find Customer</CardTitle>
-           <CardDescription>Search by phone number, specific date, or month/year.</CardDescription>
+           <CardDescription>Search by phone, specific date, month/year, or just year.</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -304,7 +298,7 @@ export default function SearchCustomersPage() {
                         control={form.control}
                         name="searchDate"
                         render={({ field }) => (
-                        <FormItem className="flex flex-col md:col-span-1">
+                        <FormItem className="flex flex-col md:col-span-1 pt-2"> {/* Adjusted alignment */}
                              <FormLabel>Specific Date (Optional)</FormLabel>
                             <Popover>
                                 <PopoverTrigger asChild>
@@ -312,7 +306,7 @@ export default function SearchCustomersPage() {
                                     <Button
                                     variant={"outline"}
                                     className={cn(
-                                        "pl-3 text-left font-normal",
+                                        "w-full pl-3 text-left font-normal",
                                         !field.value && "text-muted-foreground"
                                     )}
                                     >
@@ -329,7 +323,12 @@ export default function SearchCustomersPage() {
                                 <Calendar
                                     mode="single"
                                     selected={field.value}
-                                    onSelect={field.onChange}
+                                    onSelect={(date) => {
+                                        field.onChange(date);
+                                        // Optionally clear month/year if a specific date is selected
+                                        // form.setValue('searchMonth', null);
+                                        // form.setValue('searchYear', null);
+                                    }}
                                     disabled={(date) =>
                                     date > new Date() || date < new Date("1900-01-01")
                                     }
@@ -350,14 +349,19 @@ export default function SearchCustomersPage() {
                         render={({ field }) => (
                         <FormItem className="md:col-span-1">
                              <FormLabel>Month (Optional)</FormLabel>
-                            <Select onValueChange={(value) => field.onChange(value ? parseInt(value) : null)} value={field.value?.toString() ?? ""}>
+                            <Select onValueChange={(value) => {
+                                field.onChange(value ? parseInt(value) : null);
+                                // Clear specific date if month/year is selected
+                                // form.setValue('searchDate', null);
+                                }} value={field.value?.toString() ?? ""}>
                                 <FormControl>
                                 <SelectTrigger>
                                     <SelectValue placeholder="Select Month" />
                                 </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                     {/* Remove SelectItem with value="" */}
+                                    {/* Add an item to clear selection */}
+                                    <SelectItem value="clear" className="text-muted-foreground">Clear Month</SelectItem>
                                     {months.map(m => (
                                         <SelectItem key={m.value} value={m.value.toString()}>{m.label}</SelectItem>
                                     ))}
@@ -373,15 +377,20 @@ export default function SearchCustomersPage() {
                         name="searchYear"
                         render={({ field }) => (
                         <FormItem className="md:col-span-1">
-                             <FormLabel>Year (Required with Month)</FormLabel>
-                            <Select onValueChange={(value) => field.onChange(value ? parseInt(value) : null)} value={field.value?.toString() ?? ""}>
+                             <FormLabel>Year (Optional)</FormLabel>
+                            <Select onValueChange={(value) => {
+                                field.onChange(value ? parseInt(value) : null);
+                                // Clear specific date if month/year is selected
+                                // form.setValue('searchDate', null);
+                                }} value={field.value?.toString() ?? ""}>
                                 <FormControl>
                                 <SelectTrigger>
                                     <SelectValue placeholder="Select Year" />
                                 </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                    {/* Remove SelectItem with value="" */}
+                                    {/* Add an item to clear selection */}
+                                    <SelectItem value="clear" className="text-muted-foreground">Clear Year</SelectItem>
                                     {years.map(y => (
                                         <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
                                     ))}
@@ -444,22 +453,22 @@ export default function SearchCustomersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>ID</TableHead>
+                  {/* <TableHead>ID</TableHead> */} {/* Hide Firestore ID maybe? */}
                   <TableHead>Name</TableHead>
                   <TableHead>Phone Number</TableHead>
-                  <TableHead>First Invoice Date</TableHead> {/* Added Date Column */}
+                  <TableHead>First Activity Date</TableHead> {/* Renamed Column */}
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {searchResults.map((customer) => (
                   <TableRow key={customer.id}>
-                    <TableCell>{customer.id}</TableCell>
+                    {/* <TableCell className="text-xs text-muted-foreground">{customer.id}</TableCell> */}
                     <TableCell className="font-medium">{customer.name}</TableCell>
                     <TableCell>{customer.phone}</TableCell>
                      <TableCell>
                         {customer.firstInvoiceDate
-                            ? format(new Date(customer.firstInvoiceDate), "PPP")
+                            ? format(customer.firstInvoiceDate, "PPP") // Already a Date object
                             : 'N/A'
                         }
                     </TableCell>
@@ -480,7 +489,7 @@ export default function SearchCustomersPage() {
                               <AlertDialogHeader>
                               <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                  This action cannot be undone. This will permanently delete the customer and all associated data (prescriptions, invoices, transactions).
+                                  This action cannot be undone. This will permanently delete the customer and all associated data (prescriptions, invoices).
                               </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
@@ -500,6 +509,7 @@ export default function SearchCustomersPage() {
                   </TableRow>
                 ))}
               </TableBody>
+               <TableCaption>Customers sorted by most recent activity first.</TableCaption>
             </Table>
           </CardContent>
         </Card>
@@ -515,6 +525,3 @@ export default function SearchCustomersPage() {
     </PageWrapper>
   );
 }
-
-
-    
