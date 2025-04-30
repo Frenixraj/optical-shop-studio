@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import * as React from "react";
@@ -78,12 +79,12 @@ const billSchema = z.object({
   // Power Details (optional, use refine for complex validation if needed)
   sph_re: z.coerce.number().optional().nullable(),
   cyl_re: z.coerce.number().optional().nullable(),
-  axis_re: z.coerce.number().optional().nullable(),
+  axis_re: z.coerce.number().int().min(0).max(180).optional().nullable(),
   add_re: z.coerce.number().optional().nullable(),
   pd_re: z.coerce.number().optional().nullable(),
   sph_le: z.coerce.number().optional().nullable(),
   cyl_le: z.coerce.number().optional().nullable(),
-  axis_le: z.coerce.number().optional().nullable(),
+  axis_le: z.coerce.number().int().min(0).max(180).optional().nullable(),
   add_le: z.coerce.number().optional().nullable(),
   pd_le: z.coerce.number().optional().nullable(),
 
@@ -155,9 +156,9 @@ export default function NewBillPage() {
       const price = product.price || 0;
       const quantity = product.quantity || 0;
       const total = price * quantity;
-      // Only set the value if it has actually changed to potentially avoid triggering watch unnecessarily
+      // Only set the value if it has actually changed to prevent infinite loop
       if (form.getValues(`products.${index}.total`) !== total) {
-        form.setValue(`products.${index}.total`, total, { shouldValidate: false, shouldDirty: true, shouldTouch: true }); // Update individual total but avoid validation loop
+        form.setValue(`products.${index}.total`, total, { shouldValidate: false, shouldDirty: true });
       }
       subTotal += total;
     });
@@ -180,7 +181,8 @@ export default function NewBillPage() {
   React.useEffect(() => {
     const subscription = form.watch((value, { name, type }) => {
       // Check if the change is from user input or programmatic setValue
-      if (type !== 'change') return;
+      // Also check if the name is defined to avoid initial renders triggering this
+      if (type !== 'change' || !name) return;
 
       // Only recalculate if a relevant *input* field changed,
       // not the calculated 'total', 'netPrice', or 'balanceAmount' fields themselves.
@@ -198,7 +200,7 @@ export default function NewBillPage() {
   React.useEffect(() => {
     calculateTotals();
      // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Recalculate only if products array length changes (append/remove) - relies on default values being calculated correctly initially
+  }, []); // Calculate initially
 
 
   // --- Form Submission ---
@@ -412,41 +414,31 @@ export default function NewBillPage() {
               <CardDescription>Leave fields blank if not applicable.</CardDescription>
             </CardHeader>
             <CardContent>
-                <div className="grid grid-cols-11 gap-x-2 gap-y-4 items-end text-sm">
-                     {/* Header Row */}
-                    <div></div> {/* Eye Label Col */}
+                <div className="grid grid-cols-1 md:grid-cols-[auto_1fr_1fr_1fr_1fr_1fr] gap-x-2 gap-y-4 items-center text-sm px-4">
+                    {/* Header Row */}
+                    <div className="md:col-span-1"></div> {/* Empty cell for alignment */}
                     <Label className="text-center font-semibold">SPH</Label>
                     <Label className="text-center font-semibold">CYL</Label>
                     <Label className="text-center font-semibold">Axis</Label>
                     <Label className="text-center font-semibold">Add</Label>
                     <Label className="text-center font-semibold">PD</Label>
-                    {/* Spacer column */}
-                    <div></div>
-                    <Label className="text-center font-semibold">SPH</Label>
-                    <Label className="text-center font-semibold">CYL</Label>
-                    <Label className="text-center font-semibold">Axis</Label>
-                    <Label className="text-center font-semibold">Add</Label>
-                    <Label className="text-center font-semibold">PD</Label>
-
 
                     {/* Right Eye Row */}
-                    <Label className="font-semibold self-center">RE</Label>
+                    <Label className="font-semibold self-center justify-self-end pr-2">RE</Label>
                     <FormField control={form.control} name="sph_re" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
                     <FormField control={form.control} name="cyl_re" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
-                    <FormField control={form.control} name="axis_re" render={({ field }) => <FormItem><FormControl><Input type="number" step="1" placeholder="0" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseInt(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="axis_re" render={({ field }) => <FormItem><FormControl><Input type="number" min="0" max="180" step="1" placeholder="0" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseInt(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
                     <FormField control={form.control} name="add_re" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
                     <FormField control={form.control} name="pd_re" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.5" placeholder="0.0" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
 
-                    {/* Spacer column */}
-                    <div className="border-r border-border h-full mx-auto"></div>
 
-                    {/* Left Eye Row (Repeated structure) */}
+                    {/* Left Eye Row */}
+                     <Label className="font-semibold self-center justify-self-end pr-2">LE</Label>
                     <FormField control={form.control} name="sph_le" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
                     <FormField control={form.control} name="cyl_le" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
-                    <FormField control={form.control} name="axis_le" render={({ field }) => <FormItem><FormControl><Input type="number" step="1" placeholder="0" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseInt(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="axis_le" render={({ field }) => <FormItem><FormControl><Input type="number" min="0" max="180" step="1" placeholder="0" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseInt(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
                     <FormField control={form.control} name="add_le" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
-                    <FormField control={form.control} name="pd_le" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.5" placeholder="0.0" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
-                    <Label className="font-semibold self-center justify-self-end">LE</Label> {/* Place LE label after PD */}
+                     <FormField control={form.control} name="pd_le" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.5" placeholder="0.0" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
 
                 </div>
             </CardContent>
@@ -671,4 +663,5 @@ export default function NewBillPage() {
 }
 
 
+    
     
