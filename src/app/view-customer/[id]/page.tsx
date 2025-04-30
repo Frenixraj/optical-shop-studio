@@ -102,7 +102,7 @@ export default function ViewCustomerPage() {
 
   React.useEffect(() => {
     const fetchData = async () => {
-      if (!customerId) {
+      if (!customerId || isNaN(customerId)) { // Added NaN check
         toast({ title: "Error", description: "Invalid customer ID.", variant: "destructive" });
         router.push('/search-customers');
         return;
@@ -137,6 +137,7 @@ export default function ViewCustomerPage() {
   }, [customerId, router, toast]);
 
    const handleDeleteCustomer = async () => {
+        if (!customerId) return; // Added safety check
         setIsDeleting(true);
         try {
             await deleteCustomer(customerId);
@@ -344,12 +345,12 @@ export default function ViewCustomerPage() {
                  <CardFooter>
                     <p className="text-xs text-muted-foreground">Showing valid invoices (excluding initial customer add records).</p>
                  </CardFooter>
-            </Card> {/* Corrected closing tag */}
+            </Card>
         )}
 
          {/* Transaction History Section Removed */}
 
-      </div>
+      </div> {/* This closing div matches the one after <PageWrapper> */}
     </PageWrapper>
   );
 }
