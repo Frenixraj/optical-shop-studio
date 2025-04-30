@@ -192,7 +192,7 @@ export default function PrintPage() {
 
   const { invoice, prescription, name, phone } = printData;
   const subTotal = calculateSubTotal(invoice.products); // Calculate subtotal
-  const shopAddress = "22, Dharmaraja Kovil street, Alandur, Chennai, Tamil Nadu 600016";
+  const shopAddress = "22,Dharmaraja Kovil street, 60006, opposite Alandur, Alandur, Chennai, Tamil Nadu 600016";
   const shopPhone = "9092196263";
 
 
