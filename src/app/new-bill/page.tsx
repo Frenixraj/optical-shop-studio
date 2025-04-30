@@ -57,8 +57,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-// Import Firestore functions
-import { saveCustomer, savePrescription, saveInvoice, saveProducts, getNextBillNumber } from "@/lib/db";
+// Import Firestore functions (removed getNextBillNumber)
+import { saveCustomer, savePrescription, saveInvoice, saveProducts } from "@/lib/db";
 // Excel export might need refactoring depending on how data is fetched now
 import { exportCustomerToExcel } from "@/lib/excel"; // Placeholder Excel function
 
@@ -72,7 +72,7 @@ const productSchema = z.object({
 });
 
 const billSchema = z.object({
-  billNumber: z.string().min(1, "Bill number is required"),
+  billNumber: z.string().min(1, "Bill number is required"), // Made required
   dateTime: z.date({ required_error: "Date is required." }),
   customerName: z.string().min(1, "Customer name is required"),
   phoneNumber: z.string().min(10, "Phone number must be at least 10 digits").regex(/^\d+$/, "Phone number must contain only digits"),
@@ -109,13 +109,13 @@ export default function NewBillPage() {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [formDataForConfirmation, setFormDataForConfirmation] = React.useState<BillFormValues | null>(null);
-  const [isBillNumberLoading, setIsBillNumberLoading] = React.useState(true); // State for bill number loading
+  // Removed isBillNumberLoading state
 
 
   const form = useForm<BillFormValues>({
     resolver: zodResolver(billSchema),
     defaultValues: {
-      billNumber: "", // Will be fetched
+      billNumber: "", // Default to empty, user inputs
       dateTime: new Date(),
       customerName: "",
       phoneNumber: "",
@@ -134,35 +134,7 @@ export default function NewBillPage() {
     name: "products",
   });
 
-  // Fetch next bill number on component mount, after auth check
-  React.useEffect(() => {
-    // Don't fetch if auth is still loading
-    if (isLoadingAuth) return;
-
-    const fetchBillNumber = async () => {
-      setIsBillNumberLoading(true);
-      try {
-        console.log("Attempting to fetch next bill number from component...");
-        const nextBillNo = await getNextBillNumber();
-        console.log("Successfully fetched next bill number:", nextBillNo);
-        form.setValue("billNumber", nextBillNo);
-      } catch (error) {
-        console.error("Failed to fetch bill number in component:", error);
-        const errorMessage = error instanceof Error ? error.message : "Could not fetch the next bill number.";
-        toast({
-            title: "Error Fetching Bill Number",
-            description: errorMessage, // Display more specific error
-            variant: "destructive"
-        });
-        // Consider disabling form submission if bill number fails (button is already disabled below)
-      } finally {
-        setIsBillNumberLoading(false);
-        console.log("Finished fetching bill number.");
-      }
-    };
-    fetchBillNumber();
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoadingAuth, toast, form.setValue]); // Added toast and form.setValue dependencies
+  // Removed useEffect for fetching bill number
 
 
   // --- Calculation Logic ---
@@ -380,7 +352,8 @@ export default function NewBillPage() {
                   <FormItem>
                     <FormLabel>Bill Number</FormLabel>
                     <FormControl>
-                      <Input {...field} readOnly className="bg-muted" placeholder={isBillNumberLoading ? "Loading..." : ""} />
+                       {/* Changed from readOnly to editable */}
+                      <Input placeholder="Enter bill number" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -658,6 +631,7 @@ export default function NewBillPage() {
                     )}
                  />
 
+
                  {/* Balance Amount */}
                  <Label className="text-right font-semibold md:col-start-3">Balance Amount:</Label>
                  <FormField
@@ -677,10 +651,10 @@ export default function NewBillPage() {
                  {/* AlertDialog Trigger integrated with Submit Button */}
                 <AlertDialog>
                     <AlertDialogTrigger asChild>
-                        {/* Disable button if bill number hasn't loaded or is currently loading */}
-                        <Button type="submit" disabled={isSubmitting || isBillNumberLoading || !form.getValues("billNumber")} className="bg-accent hover:bg-accent/90 text-accent-foreground">
+                        {/* Removed disabled check for bill number loading */}
+                        <Button type="submit" disabled={isSubmitting} className="bg-accent hover:bg-accent/90 text-accent-foreground">
                             <Printer className="mr-2 h-4 w-4" />
-                            {isSubmitting ? "Submitting..." : (isBillNumberLoading ? "Loading Bill No..." : "Save & Print")}
+                            {isSubmitting ? "Submitting..." : "Save & Print"}
                         </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
