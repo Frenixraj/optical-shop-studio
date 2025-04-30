@@ -133,12 +133,12 @@ export default function ViewCustomerPage() {
 
   if (!customerData) {
      // This case should ideally be handled by the redirect in useEffect, but added for safety
-      return <PageWrapper title="Customer Not Found">
+      return (<PageWrapper title="Customer Not Found">
           <p className="text-center text-muted-foreground">The requested customer could not be found.</p>
           <div className="text-center mt-4">
              <Button onClick={() => router.push('/search-customers')}>Go to Search</Button>
           </div>
-      </PageWrapper>;
+      </PageWrapper>);
   }
 
   // Filter out placeholder invoices created during 'Add Customer'

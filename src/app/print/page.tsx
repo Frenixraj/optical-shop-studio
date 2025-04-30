@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getCustomerDetails, FullCustomerData, InvoiceDetail, PrescriptionDetail, ProductDetail } from "@/lib/db";
 import { useToast } from "@/hooks/use-toast";
 import VisionClearLogo from "@/components/icons/VisionClearLogo"; // Import the logo
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"; // Added Table components
 
 // Define a type specific to print page data structure
 interface CustomerPrintData {
@@ -201,8 +202,8 @@ export default function PrintPage() {
         </div>
 
         {/* Products Table */}
-         <table className="w-full text-sm mb-6 border-collapse">
-            <thead className="border-b bg-muted/50">
+         <Table className="w-full text-sm mb-6 border-collapse">
+            <TableHeader className="border-b bg-muted/50">
                 <TableRow>
                     <TableHead className="text-left font-semibold p-2">#</TableHead>
                     <TableHead className="text-left font-semibold p-2">Product / Service</TableHead>
@@ -210,8 +211,8 @@ export default function PrintPage() {
                     <TableHead className="text-right font-semibold p-2">Quantity</TableHead>
                     <TableHead className="text-right font-semibold p-2">Total</TableHead>
                 </TableRow>
-            </thead>
-             <tbody>
+            </TableHeader>
+             <TableBody>
                  {products.length > 0 ? (
                      products.map((item, index) => (
                         <TableRow key={item.id} className="border-b"> {/* Use item.id from Firestore */}
@@ -228,8 +229,8 @@ export default function PrintPage() {
                          <TableCell colSpan={5} className="text-center p-4 text-muted-foreground">No products listed for this invoice.</TableCell>
                      </TableRow>
                  )}
-             </tbody>
-        </table>
+             </TableBody>
+        </Table>
 
         {/* Totals Section */}
         <div className="flex justify-end mb-8">
@@ -264,8 +265,8 @@ export default function PrintPage() {
             <h2 className="text-lg font-semibold mb-4">Prescription Details</h2>
              {/* Ensure prescriptionDate is a Date object */}
              {prescription.prescriptionDate && <p className="text-sm mb-3 text-muted-foreground">Prescription Date: {format(prescription.prescriptionDate, 'PP')}</p>}
-             <table className="w-full text-sm border-collapse">
-                 <thead className="border-b bg-muted/50">
+             <Table className="w-full text-sm border-collapse">
+                 <TableHeader className="border-b bg-muted/50">
                     <TableRow>
                         <TableHead className="p-2 text-center font-semibold">Eye</TableHead>
                         <TableHead className="p-2 text-center font-semibold">SPH</TableHead>
@@ -274,8 +275,8 @@ export default function PrintPage() {
                         <TableHead className="p-2 text-center font-semibold">Add</TableHead>
                         <TableHead className="p-2 text-center font-semibold">PD</TableHead>
                     </TableRow>
-                 </thead>
-                 <tbody>
+                 </TableHeader>
+                 <TableBody>
                     <TableRow className="border-b">
                          <TableCell className="p-2 text-center font-semibold">RE</TableCell>
                          {/* Ensure numeric conversion and null checks */}
@@ -293,8 +294,8 @@ export default function PrintPage() {
                          <TableCell className="p-2 text-center">{prescription.add_le != null ? Number(prescription.add_le).toFixed(2) : '-'}</TableCell>
                          <TableCell className="p-2 text-center">{prescription.pd_le != null ? Number(prescription.pd_le).toFixed(1) : '-'}</TableCell>
                     </TableRow>
-                 </tbody>
-            </table>
+                 </TableBody>
+            </Table>
           </div>
         )}
 

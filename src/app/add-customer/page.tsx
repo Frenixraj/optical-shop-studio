@@ -137,11 +137,14 @@ export default function AddCustomerPage() {
     const products = form.getValues("products");
     let subTotal = 0;
     products.forEach((product, index) => {
-      const price = product.price || 0;
-      const quantity = product.quantity || 0;
+      // Ensure price and quantity are valid numbers before calculation
+      const price = typeof product.price === 'number' && !isNaN(product.price) ? product.price : 0;
+      const quantity = typeof product.quantity === 'number' && Number.isInteger(product.quantity) ? product.quantity : 0;
       const total = price * quantity;
-      // Only set the value if it has actually changed to prevent infinite loop
-      if (form.getValues(`products.${index}.total`) !== total) {
+
+      // Only set the value if it has actually changed to prevent potential infinite loop
+      const currentTotal = form.getValues(`products.${index}.total`);
+      if (typeof currentTotal !== 'number' || currentTotal !== total) {
         form.setValue(`products.${index}.total`, total, { shouldValidate: false, shouldDirty: true });
       }
       subTotal += total;
@@ -153,10 +156,12 @@ export default function AddCustomerPage() {
     const balanceAmount = netPrice - advanceAmount;
 
     // Only set value if it has changed
-     if (form.getValues("netPrice") !== netPrice) {
+     const currentNetPrice = form.getValues("netPrice");
+     if (typeof currentNetPrice !== 'number' || currentNetPrice !== netPrice) {
        form.setValue("netPrice", netPrice, { shouldValidate: true });
      }
-     if (form.getValues("balanceAmount") !== balanceAmount) {
+     const currentBalanceAmount = form.getValues("balanceAmount");
+      if (typeof currentBalanceAmount !== 'number' || currentBalanceAmount !== balanceAmount) {
         form.setValue("balanceAmount", balanceAmount, { shouldValidate: true });
      }
   }, [form]);
