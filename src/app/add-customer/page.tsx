@@ -4,10 +4,10 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useFieldArray, useForm } from "react-hook-form";
 import * as z from "zod";
 import { format } from "date-fns";
-import { Calendar as CalendarIcon, Save } from "lucide-react";
+import { Calendar as CalendarIcon, Save, Trash2, PlusCircle } from "lucide-react";
 
 import useAuth from '@/hooks/useAuth';
 import PageWrapper from "@/components/layout/PageWrapper";
@@ -29,6 +29,14 @@ import {
   CardFooter,
 } from "@/components/ui/card";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   Form,
   FormControl,
   FormField,
@@ -49,14 +57,21 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { saveCustomer, savePrescription } from "@/lib/db"; // Updated imports
+import { saveCustomer, savePrescription, saveInvoice, saveProducts } from "@/lib/db"; // Reuse DB functions
 import { exportCustomerToExcel } from "@/lib/excel"; // Placeholder Excel function
 
 // --- Zod Schema Definition ---
-// Simplified schema: Customer Info + Prescription Only
+// Expanded schema similar to New Bill
+
+const productSchema = z.object({
+  name: z.string().min(1, "Product name is required"),
+  price: z.coerce.number().min(0, "Price must be non-negative"),
+  quantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
+  total: z.coerce.number(), // Calculated field
+});
 
 const customerSchema = z.object({
-  // No Bill Number
+  // No Bill Number field needed on form
   dateTime: z.date({ required_error: "Date is required." }), // Date of adding customer
   customerName: z.string().min(1, "Customer name is required"),
   phoneNumber: z.string().min(10, "Phone number must be at least 10 digits").regex(/^\d+$/, "Phone number must contain only digits"),
@@ -73,7 +88,14 @@ const customerSchema = z.object({
   add_le: z.coerce.number().optional().nullable(),
   pd_le: z.coerce.number().optional().nullable(),
 
-  // Financial Transactions and Products Removed
+  // Products
+  products: z.array(productSchema).min(1, "At least one product is required"), // Now included
+
+  // Payment Details
+  discount: z.coerce.number().min(0, "Discount must be non-negative").default(0),
+  netPrice: z.coerce.number(), // Calculated
+  advanceAmount: z.coerce.number().min(0, "Advance must be non-negative").default(0),
+  balanceAmount: z.coerce.number(), // Calculated
 });
 
 type CustomerFormValues = z.infer<typeof customerSchema>;
@@ -95,14 +117,84 @@ export default function AddCustomerPage() {
       phoneNumber: "",
       sph_re: null, cyl_re: null, axis_re: null, add_re: null, pd_re: null,
       sph_le: null, cyl_le: null, axis_le: null, add_le: null, pd_le: null,
-      // No transactions or products needed
+      products: [{ name: "", price: 0, quantity: 1, total: 0 }], // Include products default
+      discount: 0,
+      netPrice: 0,
+      advanceAmount: 0,
+      balanceAmount: 0, // Include payment defaults
     },
   });
 
+   const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: "products",
+  });
+
+   // --- Calculation Logic (Copied from New Bill) ---
+   const calculateTotals = React.useCallback(() => {
+    const products = form.getValues("products");
+    let subTotal = 0;
+    products.forEach((product, index) => {
+      const price = product.price || 0;
+      const quantity = product.quantity || 0;
+      const total = price * quantity;
+      // Only set the value if it has actually changed to prevent infinite loop
+      if (form.getValues(`products.${index}.total`) !== total) {
+        form.setValue(`products.${index}.total`, total, { shouldValidate: false, shouldDirty: true });
+      }
+      subTotal += total;
+    });
+
+    const discount = form.getValues("discount") || 0;
+    const advanceAmount = form.getValues("advanceAmount") || 0;
+    const netPrice = subTotal - discount;
+    const balanceAmount = netPrice - advanceAmount;
+
+    // Only set value if it has changed
+     if (form.getValues("netPrice") !== netPrice) {
+       form.setValue("netPrice", netPrice, { shouldValidate: true });
+     }
+     if (form.getValues("balanceAmount") !== balanceAmount) {
+        form.setValue("balanceAmount", balanceAmount, { shouldValidate: true });
+     }
+  }, [form]);
+
+  // Recalculate when products (price/quantity), discount, or advance changes
+  React.useEffect(() => {
+    const subscription = form.watch((value, { name, type }) => {
+      if (type !== 'change' || !name) return;
+
+      const isProductInput = name?.startsWith("products") && (name.endsWith(".price") || name.endsWith(".quantity"));
+      const isPaymentInput = name === "discount" || name === "advanceAmount";
+
+      if (isProductInput || isPaymentInput) {
+        // Use requestAnimationFrame to defer the calculation slightly, preventing potential stack overflows
+        requestAnimationFrame(() => {
+          calculateTotals();
+        });
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [form, calculateTotals]);
+
+
+  // Initial calculation on mount
+  React.useEffect(() => {
+    // Use setTimeout to ensure initial calculation happens after the first render potentially fixes state updates
+    const timer = setTimeout(() => {
+        calculateTotals();
+    }, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Recalculate initially
+
   // --- Form Submission ---
   const onSubmit = (data: CustomerFormValues) => {
-     console.log("Form Data (Add Customer):", data);
-     setFormDataForConfirmation(data);
+     // Ensure calculations are final before submitting
+     calculateTotals();
+     const finalData = form.getValues(); // Get potentially recalculated values
+     console.log("Form Data (Add Customer):", finalData);
+     setFormDataForConfirmation(finalData);
      // Trigger the AlertDialog
   };
 
@@ -135,15 +227,34 @@ export default function AddCustomerPage() {
                 axis_le: formDataForConfirmation.axis_le,
                 add_le: formDataForConfirmation.add_le,
                 pd_le: formDataForConfirmation.pd_le,
-                 prescriptionDate: new Date(), // Add prescription date on save
+                prescriptionDate: new Date(), // Add prescription date on save
             });
         }
 
-        // 3. Prepare data for Excel export (Customer + Prescription)
+        // 3. Save Invoice-like record (using a placeholder bill number)
+        const placeholderBillNumber = `CUST_ADD_${customerId}_${Date.now()}`;
+        const invoiceResult = await saveInvoice({
+            customerId: customerId,
+            billNumber: placeholderBillNumber, // Use placeholder
+            dateTime: formDataForConfirmation.dateTime,
+            discount: formDataForConfirmation.discount,
+            netPrice: formDataForConfirmation.netPrice,
+            advanceAmount: formDataForConfirmation.advanceAmount,
+            balanceAmount: formDataForConfirmation.balanceAmount,
+        });
+        const invoiceId = invoiceResult.id;
+
+        // 4. Save Products linked to the invoice record
+        const productsToSave = formDataForConfirmation.products.map(p => ({ ...p, invoiceId }));
+        await saveProducts(productsToSave);
+
+        // 5. Prepare data for Excel export (Customer + Prescription + Products + Payment)
         const excelData = {
             id: customerId,
             name: formDataForConfirmation.customerName,
             phone: formDataForConfirmation.phoneNumber,
+            // Use placeholder bill number or leave blank in Excel? Using placeholder for now.
+            billNumber: placeholderBillNumber,
             dateTime: formDataForConfirmation.dateTime, // Customer add date
             sph_re: formDataForConfirmation.sph_re,
             cyl_re: formDataForConfirmation.cyl_re,
@@ -155,14 +266,18 @@ export default function AddCustomerPage() {
             axis_le: formDataForConfirmation.axis_le,
             add_le: formDataForConfirmation.add_le,
             pd_le: formDataForConfirmation.pd_le,
-            // No invoice/product/transaction details for this page
+            products: formDataForConfirmation.products.map(p => `${p.name} (Qty: ${p.quantity}, Price: ${p.price})`).join('; '),
+            discount: formDataForConfirmation.discount,
+            netPrice: formDataForConfirmation.netPrice,
+            advanceAmount: formDataForConfirmation.advanceAmount,
+            balanceAmount: formDataForConfirmation.balanceAmount,
         };
         await exportCustomerToExcel(excelData); // Placeholder call
 
 
         toast({
             title: "Success",
-            description: "Customer data saved successfully.",
+            description: "Customer data, products, and payment details saved successfully.",
         });
 
         form.reset(); // Reset form after successful submission
@@ -184,7 +299,7 @@ export default function AddCustomerPage() {
 
   // --- Render ---
   return (
-    <PageWrapper title="Add New Customer & Prescription">
+    <PageWrapper title="Add New Customer & Details">
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
 
@@ -299,6 +414,194 @@ export default function AddCustomerPage() {
 
                 </div>
             </CardContent>
+          </Card>
+
+           {/* Product Details */}
+           <Card>
+            <CardHeader>
+              <CardTitle>Products</CardTitle>
+            </CardHeader>
+            <CardContent>
+               <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-2/5">Product Name</TableHead>
+                    <TableHead>Price</TableHead>
+                    <TableHead>Quantity</TableHead>
+                    <TableHead>Total Price</TableHead>
+                    <TableHead>Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {fields.map((item, index) => (
+                    <TableRow key={item.id}>
+                      <TableCell>
+                        <FormField
+                          control={form.control}
+                          name={`products.${index}.name`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Input placeholder="Enter product name" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <FormField
+                          control={form.control}
+                          name={`products.${index}.price`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Input type="number" step="0.01" placeholder="0.00" {...field} onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}/>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <FormField
+                          control={form.control}
+                          name={`products.${index}.quantity`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Input type="number" step="1" placeholder="1" {...field} onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </TableCell>
+                       <TableCell>
+                        <FormField
+                          control={form.control}
+                          name={`products.${index}.total`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                 {/* Display calculated total, read-only visually */}
+                                <Input readOnly value={field.value?.toFixed(2) || '0.00'} className="bg-muted border-none text-right" />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="icon"
+                          onClick={() => remove(index)}
+                          disabled={fields.length <= 1} // Prevent removing the last row
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-4"
+                onClick={() => append({ name: "", price: 0, quantity: 1, total: 0 })}
+              >
+                <PlusCircle className="mr-2 h-4 w-4" />
+                Add Product
+              </Button>
+            </CardContent>
+          </Card>
+
+           {/* Payment Summary */}
+          <Card>
+             <CardHeader>
+                 <CardTitle>Payment Summary</CardTitle>
+            </CardHeader>
+             <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                 <div></div> {/* Spacer */}
+                 <div></div> {/* Spacer */}
+                 <Label className="text-right font-semibold pt-2">Sub Total:</Label>
+                 <Input
+                    readOnly
+                    value={(form.getValues("products")?.reduce((sum, p) => sum + (p.total || 0), 0) || 0).toFixed(2)}
+                    className="bg-muted border-none text-right"
+                />
+
+
+                <div></div> {/* Spacer */}
+                <div></div> {/* Spacer */}
+                 <FormField
+                    control={form.control}
+                    name="discount"
+                    render={({ field }) => (
+                    <FormItem>
+                        <FormLabel className="text-right block">Discount:</FormLabel>
+                        <FormControl>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} className="text-right" onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}/>
+                        </FormControl>
+                        <FormMessage />
+                    </FormItem>
+                    )}
+                />
+                 <div></div> {/* Placeholder for alignment */}
+
+                <div></div> {/* Spacer */}
+                 <div></div> {/* Spacer */}
+                <Label className="text-right font-semibold">Net Price:</Label>
+                 <FormField
+                    control={form.control}
+                    name="netPrice"
+                    render={({ field }) => (
+                    <FormItem>
+                        <FormControl>
+                            <Input readOnly value={field.value?.toFixed(2) || '0.00'} className="bg-muted border-none text-right font-semibold"/>
+                        </FormControl>
+                        <FormMessage />
+                    </FormItem>
+                    )}
+                />
+
+
+               <div></div> {/* Spacer */}
+                <div></div> {/* Spacer */}
+                 <FormField
+                    control={form.control}
+                    name="advanceAmount"
+                    render={({ field }) => (
+                    <FormItem>
+                        <FormLabel className="text-right block">Advance Amount:</FormLabel>
+                        <FormControl>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} className="text-right" onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}/>
+                        </FormControl>
+                        <FormMessage />
+                    </FormItem>
+                    )}
+                />
+                 <div></div> {/* Placeholder for alignment */}
+
+                <div></div> {/* Spacer */}
+                 <div></div> {/* Spacer */}
+                <Label className="text-right font-semibold">Balance Amount:</Label>
+                 <FormField
+                    control={form.control}
+                    name="balanceAmount"
+                    render={({ field }) => (
+                    <FormItem>
+                        <FormControl>
+                         <Input readOnly value={field.value?.toFixed(2) || '0.00'} className="bg-muted border-none text-right font-semibold"/>
+                        </FormControl>
+                         <FormMessage />
+                    </FormItem>
+                    )}
+                />
+            </CardContent>
              <CardFooter className="flex justify-end mt-6">
                  {/* AlertDialog Trigger integrated with Submit Button */}
                 <AlertDialog>
@@ -312,7 +615,7 @@ export default function AddCustomerPage() {
                         <AlertDialogHeader>
                         <AlertDialogTitle>Confirm Save</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Are you sure you want to save this customer's data? This action will store the information in the database and export it to Excel.
+                            Are you sure you want to save this customer's data, including product and payment details? This action will store the information in the database and export it to Excel. No invoice will be generated for printing.
                         </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -325,7 +628,6 @@ export default function AddCustomerPage() {
                 </AlertDialog>
             </CardFooter>
           </Card>
-          {/* Financial Transactions section removed */}
 
         </form>
       </Form>

@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from "react";
@@ -39,7 +40,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge"; // Import Badge
+import { Badge } from "@/components/ui/badge"; // Import Badge (kept in case needed elsewhere, though not used for transactions now)
 
 // Define interfaces for the detailed data
 interface ProductDetail {
@@ -78,13 +79,7 @@ interface PrescriptionDetail {
    prescriptionDate?: Date;
 }
 
-interface TransactionDetail {
-  customerId: number;
-  date: Date;
-  description: string;
-  amount: number;
-  type: 'debit' | 'credit';
-}
+// TransactionDetail interface removed
 
 interface CustomerFullDetails {
   id: number;
@@ -92,7 +87,7 @@ interface CustomerFullDetails {
   phone: string;
   prescriptions?: PrescriptionDetail[];
   invoices?: InvoiceDetail[];
-  transactions?: TransactionDetail[];
+  // transactions array removed
 }
 
 export default function ViewCustomerPage() {
@@ -124,7 +119,7 @@ export default function ViewCustomerPage() {
                 ...data,
                 prescriptions: data.prescriptions?.map(p => ({ ...p, prescriptionDate: p.prescriptionDate ? new Date(p.prescriptionDate) : undefined })) || [],
                 invoices: data.invoices?.map(inv => ({ ...inv, dateTime: new Date(inv.dateTime) })) || [],
-                transactions: data.transactions?.map(t => ({ ...t, date: new Date(t.date) })) || [],
+                // transactions processing removed
            };
           setCustomerData(processedData as CustomerFullDetails); // Cast after processing
         }
@@ -171,6 +166,7 @@ export default function ViewCustomerPage() {
             <CardHeader><Skeleton className="h-6 w-1/3" /></CardHeader>
             <CardContent><Skeleton className="h-32 w-full" /></CardContent>
           </Card>
+           {/* Transaction Skeleton Removed */}
         </div>
       </PageWrapper>
     );
@@ -180,6 +176,10 @@ export default function ViewCustomerPage() {
      // This case should ideally be handled by the redirect in useEffect, but added for safety
       return <PageWrapper title="Customer Not Found"></PageWrapper>;
   }
+
+  // Filter out placeholder invoices created during 'Add Customer' if they exist and are identifiable
+   const validInvoices = customerData.invoices?.filter(inv => !inv.billNumber.startsWith('CUST_ADD_')) || [];
+
 
   return (
     <PageWrapper title={`Details for ${customerData.name}`}>
@@ -233,8 +233,8 @@ export default function ViewCustomerPage() {
                     <Table>
                         <TableHeader>
                         <TableRow>
-                            {/* Optional: Add Date if available */}
-                            {/* <TableHead>Date</TableHead> */}
+                             {/* Check if ANY prescription has a date before adding the Date column */}
+                             {customerData.prescriptions.some(p => p.prescriptionDate) && <TableHead>Date</TableHead>}
                             <TableHead className="text-center">Eye</TableHead>
                             <TableHead className="text-center">SPH</TableHead>
                             <TableHead className="text-center">CYL</TableHead>
@@ -244,10 +244,15 @@ export default function ViewCustomerPage() {
                         </TableRow>
                         </TableHeader>
                         <TableBody>
-                        {customerData.prescriptions.map((p, index) => (
+                        {customerData.prescriptions.sort((a, b) => (b.prescriptionDate?.getTime() ?? 0) - (a.prescriptionDate?.getTime() ?? 0)).map((p, index) => ( // Sort by date desc
                             <React.Fragment key={`pres-${index}`}>
                                 <TableRow>
-                                    {/* {p.prescriptionDate && <TableCell rowSpan={2}>{format(p.prescriptionDate, "PP")}</TableCell>} */}
+                                     {/* Add rowspan only if date column exists */}
+                                     {customerData.prescriptions.some(pr => pr.prescriptionDate) && (
+                                          <TableCell rowSpan={2} className="align-top pt-4">
+                                             {p.prescriptionDate ? format(p.prescriptionDate, "PP") : 'N/A'}
+                                          </TableCell>
+                                     )}
                                     <TableCell className="font-semibold text-center">RE</TableCell>
                                     <TableCell className="text-center">{p.sph_re?.toFixed(2) ?? '-'}</TableCell>
                                     <TableCell className="text-center">{p.cyl_re?.toFixed(2) ?? '-'}</TableCell>
@@ -256,7 +261,6 @@ export default function ViewCustomerPage() {
                                     <TableCell className="text-center">{p.pd_re?.toFixed(1) ?? '-'}</TableCell>
                                 </TableRow>
                                 <TableRow>
-                                     {/* {!p.prescriptionDate && <TableCell></TableCell>} Placeholder if no date */}
                                     <TableCell className="font-semibold text-center">LE</TableCell>
                                     <TableCell className="text-center">{p.sph_le?.toFixed(2) ?? '-'}</TableCell>
                                     <TableCell className="text-center">{p.cyl_le?.toFixed(2) ?? '-'}</TableCell>
@@ -264,23 +268,32 @@ export default function ViewCustomerPage() {
                                     <TableCell className="text-center">{p.add_le?.toFixed(2) ?? '-'}</TableCell>
                                     <TableCell className="text-center">{p.pd_le?.toFixed(1) ?? '-'}</TableCell>
                                 </TableRow>
-                                {index < customerData.prescriptions!.length - 1 && (
-                                     <TableRow><TableCell colSpan={7} className="p-0"><hr className="my-2 border-border"/></TableCell></TableRow> // Separator
+                                {/* Add separator between different prescription entries */}
+                                {index < customerData.prescriptions.length - 1 && (
+                                    <TableRow>
+                                      <TableCell
+                                        colSpan={customerData.prescriptions.some(pr => pr.prescriptionDate) ? 7 : 6} // Adjust colspan based on date column presence
+                                        className="p-0 h-2"
+                                      >
+                                        <div className="border-t border-muted my-2"></div>
+                                      </TableCell>
+                                    </TableRow>
                                 )}
                             </React.Fragment>
                         ))}
                         </TableBody>
+                         <TableCaption>Prescriptions sorted by date (latest first).</TableCaption>
                     </Table>
                 </CardContent>
             </Card>
          )}
 
         {/* Invoice History */}
-        {customerData.invoices && customerData.invoices.length > 0 && (
+         {validInvoices.length > 0 && (
             <Card>
                 <CardHeader><CardTitle>Invoice History</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
-                    {customerData.invoices.map((invoice) => (
+                    {validInvoices.sort((a,b) => b.dateTime.getTime() - a.dateTime.getTime()).map((invoice) => ( // Sort by date desc
                         <Card key={invoice.invoiceId} className="bg-muted/50">
                             <CardHeader className="flex flex-row justify-between items-start pb-2">
                                 <div>
@@ -328,44 +341,13 @@ export default function ViewCustomerPage() {
                         </Card>
                     ))}
                 </CardContent>
-            </Card>
+                 <CardFooter>
+                    <p className="text-xs text-muted-foreground">Showing valid invoices (excluding initial customer add records).</p>
+                 </CardFooter>
+            </Card> {/* Corrected closing tag */}
         )}
 
-        {/* Transaction History */}
-        {customerData.transactions && customerData.transactions.length > 0 && (
-            <Card>
-                <CardHeader><CardTitle>Transaction History</CardTitle></CardHeader>
-                <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Date</TableHead>
-                                <TableHead>Description</TableHead>
-                                <TableHead>Type</TableHead>
-                                <TableHead className="text-right">Amount</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {customerData.transactions.map((t, index) => (
-                                <TableRow key={`txn-${index}`}>
-                                    <TableCell>{format(t.date, "PP")}</TableCell>
-                                    <TableCell>{t.description}</TableCell>
-                                    <TableCell>
-                                        <Badge variant={t.type === 'credit' ? 'default' : 'secondary'} className={t.type === 'credit' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
-                                            {t.type === 'credit' ? 'Credit' : 'Debit'}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell className={`text-right font-medium ${t.type === 'credit' ? 'text-green-600' : 'text-red-600'}`}>
-                                       {t.type === 'credit' ? '+' : '-'}{t.amount.toFixed(2)}
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                         <TableCaption>Overview of financial transactions.</TableCaption>
-                    </Table>
-                </CardContent>
-            </Card>
-        )}
+         {/* Transaction History Section Removed */}
 
       </div>
     </PageWrapper>

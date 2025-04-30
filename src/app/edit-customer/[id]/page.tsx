@@ -58,7 +58,9 @@ import { exportCustomerToExcel } from "@/lib/excel"; // Placeholder Excel functi
 // Simplified schema: Customer Info + Prescription Only
 const customerSchema = z.object({
   id: z.number(), // Keep track of the customer ID being edited
-  dateTime: z.date({ required_error: "Date is required." }), // Date field remains, maybe 'Last Updated' or 'Date Added'
+  // No specific 'dateTime' field needed directly for saving customer info, maybe 'lastUpdated' handled by DB?
+  // Retain for display purposes if needed, but mark optional or remove if not editable.
+  dateTime: z.date().optional(), // Make optional or remove if not needed for form submission logic
   customerName: z.string().min(1, "Customer name is required"),
   phoneNumber: z.string().min(10, "Phone number must be at least 10 digits").regex(/^\d+$/, "Phone number must contain only digits"),
 
@@ -91,6 +93,7 @@ export default function EditCustomerPage() {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [formDataForConfirmation, setFormDataForConfirmation] = React.useState<CustomerFormValues | null>(null);
+  const [displayDate, setDisplayDate] = React.useState<Date>(new Date()); // State to hold date for display
 
   const form = useForm<CustomerFormValues>({
     resolver: zodResolver(customerSchema),
@@ -98,22 +101,32 @@ export default function EditCustomerPage() {
         if (!customerId) {
             toast({ title: "Error", description: "Invalid customer ID.", variant: "destructive" });
             router.push('/search-customers');
-            return { id: NaN, dateTime: new Date(), customerName: '', phoneNumber: '' }; // Simplified default
+            return { id: NaN, customerName: '', phoneNumber: '' }; // Simplified default
         }
         try {
             const customerData = await getCustomerDetails(customerId);
             if (!customerData) {
                 toast({ title: "Not Found", description: "Customer not found.", variant: "destructive" });
                 router.push('/search-customers');
-                return { id: customerId, dateTime: new Date(), customerName: '', phoneNumber: '' };
+                return { id: customerId, customerName: '', phoneNumber: '' };
             }
             // Assuming prescription is fetched, take the latest one
-            const latestPrescription = customerData.prescriptions?.sort((a, b) => (b.prescriptionDate?.getTime() ?? 0) - (a.prescriptionDate?.getTime() ?? 0))[0];
+            const latestPrescription = customerData.prescriptions
+                                        ?.map(p => ({ ...p, prescriptionDate: p.prescriptionDate ? new Date(p.prescriptionDate) : null }))
+                                        ?.sort((a, b) => (b.prescriptionDate?.getTime() ?? 0) - (a.prescriptionDate?.getTime() ?? 0))[0];
+
+            // Determine the date to display (e.g., latest invoice date or creation date)
+             const latestInvoiceDate = customerData.invoices
+                                        ?.map(inv => new Date(inv.dateTime))
+                                        ?.sort((a, b) => b.getTime() - a.getTime())[0];
+            const dateToShow = latestInvoiceDate || new Date(); // Fallback to current date if no invoices
+            setDisplayDate(dateToShow); // Set display date state
+
+
             setIsLoading(false);
             return {
                 id: customerData.id,
-                // Decide which date to show: Date added or Last Invoice? Using fallback to new Date()
-                dateTime: customerData.invoices?.[0]?.dateTime ? new Date(customerData.invoices[0].dateTime) : new Date(),
+                // dateTime is not part of the editable form data based on simplified schema
                 customerName: customerData.name,
                 phoneNumber: customerData.phone,
                 sph_re: latestPrescription?.sph_re ?? null,
@@ -126,13 +139,12 @@ export default function EditCustomerPage() {
                 axis_le: latestPrescription?.axis_le ?? null,
                 add_le: latestPrescription?.add_le ?? null,
                 pd_le: latestPrescription?.pd_le ?? null,
-                // No transactions
             };
         } catch (error) {
             console.error("Failed to fetch customer details:", error);
             toast({ title: "Error", description: "Could not load customer data.", variant: "destructive" });
             router.push('/search-customers');
-            return { id: customerId, dateTime: new Date(), customerName: '', phoneNumber: '' };
+            return { id: customerId, customerName: '', phoneNumber: '' };
         }
     },
   });
@@ -181,11 +193,12 @@ export default function EditCustomerPage() {
         // 3. Transaction saving removed
 
         // 4. Prepare data for Excel export (optional, maybe not needed on edit?)
+        // Fetch the latest details again AFTER update for accurate export? Or use form data? Using form data for simplicity.
         const excelData = {
             id: customerId,
             name: formDataForConfirmation.customerName,
             phone: formDataForConfirmation.phoneNumber,
-            dateTime: formDataForConfirmation.dateTime, // Include date shown on form
+            dateTime: displayDate, // Include date shown on form
             sph_re: formDataForConfirmation.sph_re,
             cyl_re: formDataForConfirmation.cyl_re,
             axis_re: formDataForConfirmation.axis_re,
@@ -196,6 +209,7 @@ export default function EditCustomerPage() {
             axis_le: formDataForConfirmation.axis_le,
             add_le: formDataForConfirmation.add_le,
             pd_le: formDataForConfirmation.pd_le,
+            // No product/payment details needed here based on schema
         };
         await exportCustomerToExcel(excelData); // Optional export
 
@@ -268,34 +282,15 @@ export default function EditCustomerPage() {
               <CardTitle>Customer Information</CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
-               <FormField
-                control={form.control}
-                name="dateTime"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col pt-2">
-                    <FormLabel>Date Added/Last Update</FormLabel> {/* Label clarified */}
-                     <Popover>
-                        <PopoverTrigger asChild>
-                        <FormControl>
-                            <Button
-                            variant={"outline"}
-                            className={cn(
-                                "w-full pl-3 text-left font-normal",
-                                !field.value && "text-muted-foreground"
-                            )}
-                            disabled // Maybe disable date editing? Or allow? Let's disable for now.
-                            >
-                            {field.value ? format(new Date(field.value), "PPP") : <span>Pick a date</span>}
-                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                            </Button>
-                        </FormControl>
-                        </PopoverTrigger>
-                        {/* PopoverContent removed if disabled */}
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+               {/* Display Date Field (Read-Only) */}
+                <div className="flex flex-col pt-2 space-y-2">
+                   <Label>Last Activity Date</Label>
+                   <Input
+                     value={displayDate ? format(displayDate, "PPP") : "N/A"}
+                     readOnly
+                     className="bg-muted"
+                   />
+                 </div>
               <FormField
                 control={form.control}
                 name="customerName"
