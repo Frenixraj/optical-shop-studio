@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from "react";
@@ -154,7 +155,10 @@ export default function NewBillPage() {
       const price = product.price || 0;
       const quantity = product.quantity || 0;
       const total = price * quantity;
-      form.setValue(`products.${index}.total`, total, { shouldValidate: false }); // Update individual total
+      // Only set the value if it has actually changed to potentially avoid triggering watch unnecessarily
+      if (form.getValues(`products.${index}.total`) !== total) {
+        form.setValue(`products.${index}.total`, total, { shouldValidate: false, shouldDirty: true, shouldTouch: true }); // Update individual total but avoid validation loop
+      }
       subTotal += total;
     });
 
@@ -163,30 +167,47 @@ export default function NewBillPage() {
     const netPrice = subTotal - discount;
     const balanceAmount = netPrice - advanceAmount;
 
-    form.setValue("netPrice", netPrice, { shouldValidate: true });
-    form.setValue("balanceAmount", balanceAmount, { shouldValidate: true });
+    // Only set value if it has changed
+     if (form.getValues("netPrice") !== netPrice) {
+       form.setValue("netPrice", netPrice, { shouldValidate: true });
+     }
+     if (form.getValues("balanceAmount") !== balanceAmount) {
+        form.setValue("balanceAmount", balanceAmount, { shouldValidate: true });
+     }
   }, [form]);
 
-  // Recalculate when products, discount, or advance changes
+  // Recalculate when products (price/quantity), discount, or advance changes
   React.useEffect(() => {
-    const subscription = form.watch((value, { name }) => {
-      if (name?.startsWith("products") || name === "discount" || name === "advanceAmount") {
+    const subscription = form.watch((value, { name, type }) => {
+      // Check if the change is from user input or programmatic setValue
+      if (type !== 'change') return;
+
+      // Only recalculate if a relevant *input* field changed,
+      // not the calculated 'total', 'netPrice', or 'balanceAmount' fields themselves.
+      const isProductInput = name?.startsWith("products") && (name.endsWith(".price") || name.endsWith(".quantity"));
+      const isPaymentInput = name === "discount" || name === "advanceAmount";
+
+      if (isProductInput || isPaymentInput) {
         calculateTotals();
       }
     });
     return () => subscription.unsubscribe();
   }, [form, calculateTotals]);
 
-  // Initial calculation
+  // Initial calculation on mount
   React.useEffect(() => {
     calculateTotals();
-  }, [calculateTotals]);
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Recalculate only if products array length changes (append/remove) - relies on default values being calculated correctly initially
 
 
   // --- Form Submission ---
   const onSubmit = (data: BillFormValues) => {
-     console.log("Form Data:", data);
-     setFormDataForConfirmation(data); // Store data for confirmation dialog
+     // Ensure calculations are final before submitting
+     calculateTotals();
+     const finalData = form.getValues(); // Get potentially recalculated values
+     console.log("Form Data:", finalData);
+     setFormDataForConfirmation(finalData); // Store data for confirmation dialog
      // Trigger the AlertDialog
   };
 
@@ -410,22 +431,22 @@ export default function NewBillPage() {
 
                     {/* Right Eye Row */}
                     <Label className="font-semibold self-center">RE</Label>
-                    <FormField control={form.control} name="sph_re" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} className="text-center" /></FormControl><FormMessage /></FormItem>} />
-                    <FormField control={form.control} name="cyl_re" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} className="text-center" /></FormControl><FormMessage /></FormItem>} />
-                    <FormField control={form.control} name="axis_re" render={({ field }) => <FormItem><FormControl><Input type="number" step="1" placeholder="0" {...field} value={field.value ?? ''} className="text-center" /></FormControl><FormMessage /></FormItem>} />
-                    <FormField control={form.control} name="add_re" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} className="text-center" /></FormControl><FormMessage /></FormItem>} />
-                    <FormField control={form.control} name="pd_re" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.5" placeholder="0.0" {...field} value={field.value ?? ''} className="text-center" /></FormControl><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="sph_re" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="cyl_re" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="axis_re" render={({ field }) => <FormItem><FormControl><Input type="number" step="1" placeholder="0" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseInt(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="add_re" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="pd_re" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.5" placeholder="0.0" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
 
                     {/* Spacer column */}
                     <div className="border-r border-border h-full mx-auto"></div>
 
                     {/* Left Eye Row (Repeated structure) */}
-                    <FormField control={form.control} name="sph_le" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} className="text-center" /></FormControl><FormMessage /></FormItem>} />
-                    <FormField control={form.control} name="cyl_le" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} className="text-center" /></FormControl><FormMessage /></FormItem>} />
-                    <FormField control={form.control} name="axis_le" render={({ field }) => <FormItem><FormControl><Input type="number" step="1" placeholder="0" {...field} value={field.value ?? ''} className="text-center" /></FormControl><FormMessage /></FormItem>} />
-                    <FormField control={form.control} name="add_le" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} className="text-center" /></FormControl><FormMessage /></FormItem>} />
-                     <FormField control={form.control} name="pd_le" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.5" placeholder="0.0" {...field} value={field.value ?? ''} className="text-center" /></FormControl><FormMessage /></FormItem>} />
-                     <Label className="font-semibold self-center justify-self-end">LE</Label> {/* Place LE label after PD */}
+                    <FormField control={form.control} name="sph_le" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="cyl_le" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="axis_le" render={({ field }) => <FormItem><FormControl><Input type="number" step="1" placeholder="0" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseInt(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="add_le" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.25" placeholder="0.00" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
+                    <FormField control={form.control} name="pd_le" render={({ field }) => <FormItem><FormControl><Input type="number" step="0.5" placeholder="0.0" {...field} value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value === '' ? null : parseFloat(e.target.value))} className="text-center" /></FormControl><FormMessage /></FormItem>} />
+                    <Label className="font-semibold self-center justify-self-end">LE</Label> {/* Place LE label after PD */}
 
                 </div>
             </CardContent>
@@ -471,7 +492,7 @@ export default function NewBillPage() {
                           render={({ field }) => (
                             <FormItem>
                               <FormControl>
-                                <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                                <Input type="number" step="0.01" placeholder="0.00" {...field} onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}/>
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -485,7 +506,7 @@ export default function NewBillPage() {
                           render={({ field }) => (
                             <FormItem>
                               <FormControl>
-                                <Input type="number" step="1" placeholder="1" {...field} />
+                                <Input type="number" step="1" placeholder="1" {...field} onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -559,7 +580,7 @@ export default function NewBillPage() {
                     <FormItem>
                         <FormLabel className="text-right block">Discount:</FormLabel>
                         <FormControl>
-                        <Input type="number" step="0.01" placeholder="0.00" {...field} className="text-right"/>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} className="text-right" onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}/>
                         </FormControl>
                         <FormMessage />
                     </FormItem>
@@ -593,7 +614,7 @@ export default function NewBillPage() {
                     <FormItem>
                         <FormLabel className="text-right block">Advance Amount:</FormLabel>
                         <FormControl>
-                        <Input type="number" step="0.01" placeholder="0.00" {...field} className="text-right"/>
+                        <Input type="number" step="0.01" placeholder="0.00" {...field} className="text-right" onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}/>
                         </FormControl>
                         <FormMessage />
                     </FormItem>
@@ -648,3 +669,6 @@ export default function NewBillPage() {
     </PageWrapper>
   );
 }
+
+
+    
