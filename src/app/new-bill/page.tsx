@@ -190,7 +190,10 @@ export default function NewBillPage() {
       const isPaymentInput = name === "discount" || name === "advanceAmount";
 
       if (isProductInput || isPaymentInput) {
-        calculateTotals();
+         // Use requestAnimationFrame to defer calculation slightly
+        requestAnimationFrame(() => {
+             calculateTotals();
+        });
       }
     });
     return () => subscription.unsubscribe();
@@ -198,7 +201,11 @@ export default function NewBillPage() {
 
   // Initial calculation on mount
   React.useEffect(() => {
-    calculateTotals();
+    // Use setTimeout to ensure initial calculation happens after the first render
+    const timer = setTimeout(() => {
+        calculateTotals();
+    }, 0);
+    return () => clearTimeout(timer);
      // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Calculate initially
 
@@ -564,12 +571,12 @@ export default function NewBillPage() {
                  />
 
                  {/* Discount */}
+                 <Label className="text-right font-semibold md:col-start-3">Discount:</Label>
                  <FormField
                     control={form.control}
                     name="discount"
                     render={({ field }) => (
-                    <FormItem className="md:col-start-3">
-                        <FormLabel className="text-right block">Discount:</FormLabel>
+                    <FormItem className="md:col-start-4"> {/* Changed col-start */}
                         <FormControl>
                             <Input type="number" step="0.01" placeholder="0.00" {...field} className="text-right" onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}/>
                         </FormControl>
@@ -577,7 +584,7 @@ export default function NewBillPage() {
                     </FormItem>
                     )}
                  />
-                 <div className="md:col-start-4"></div> {/* Placeholder for alignment */}
+
 
                  {/* Net Price */}
                  <Label className="text-right font-semibold md:col-start-3">Net Price:</Label>
@@ -595,12 +602,12 @@ export default function NewBillPage() {
                  />
 
                  {/* Advance Amount */}
+                  <Label className="text-right font-semibold md:col-start-3">Advance Amount:</Label>
                  <FormField
                     control={form.control}
                     name="advanceAmount"
                     render={({ field }) => (
-                    <FormItem className="md:col-start-3">
-                        <FormLabel className="text-right block">Advance Amount:</FormLabel>
+                    <FormItem className="md:col-start-4"> {/* Changed col-start */}
                         <FormControl>
                             <Input type="number" step="0.01" placeholder="0.00" {...field} className="text-right" onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}/>
                         </FormControl>
@@ -608,7 +615,6 @@ export default function NewBillPage() {
                     </FormItem>
                     )}
                  />
-                 <div className="md:col-start-4"></div> {/* Placeholder for alignment */}
 
                  {/* Balance Amount */}
                  <Label className="text-right font-semibold md:col-start-3">Balance Amount:</Label>
@@ -656,6 +662,7 @@ export default function NewBillPage() {
     </PageWrapper>
   );
 }
+
 
 
 
