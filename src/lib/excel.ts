@@ -98,8 +98,8 @@ export async function exportCustomersToExcel(data: CustomerFullData[]): Promise<
     /*
     try {
         const wsData = [
-            // Header Row - Adjust columns as needed
-            ["Customer ID", "Name", "Phone", "Created At", "Last Bill No", "Last Invoice Date", "SPH RE", "CYL RE", "AXIS RE", /* ... other headers ... */ ,"Balance"],
+            // Header Row - Complete headers based on CustomerFullData
+             ["Customer ID", "Name", "Phone", "Created At", "Last Bill No", "Last Invoice Date", "SPH RE", "CYL RE", "AXIS RE", "ADD RE", "PD RE", "SPH LE", "CYL LE", "AXIS LE", "ADD LE", "PD LE", "Products", "Discount", "Net Price", "Advance", "Balance"],
         ];
 
         // Map data array to rows
@@ -114,7 +114,17 @@ export async function exportCustomersToExcel(data: CustomerFullData[]): Promise<
                 customer.sph_re ?? '',
                 customer.cyl_re ?? '',
                 customer.axis_re ?? '',
-                // ... other customer fields ...
+                customer.add_re ?? '',
+                customer.pd_re ?? '',
+                customer.sph_le ?? '',
+                customer.cyl_le ?? '',
+                customer.axis_le ?? '',
+                customer.add_le ?? '',
+                customer.pd_le ?? '',
+                customer.products ?? '',
+                customer.discount ?? '',
+                customer.netPrice ?? '',
+                customer.advanceAmount ?? '',
                 customer.balanceAmount ?? '',
             ]);
         });
