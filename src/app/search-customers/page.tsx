@@ -357,7 +357,7 @@ export default function SearchCustomersPage() {
                                 </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                     <SelectItem value="">-- Select Month --</SelectItem>
+                                     {/* Remove SelectItem with value="" */}
                                     {months.map(m => (
                                         <SelectItem key={m.value} value={m.value.toString()}>{m.label}</SelectItem>
                                     ))}
@@ -381,7 +381,7 @@ export default function SearchCustomersPage() {
                                 </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                    <SelectItem value="">-- Select Year --</SelectItem>
+                                    {/* Remove SelectItem with value="" */}
                                     {years.map(y => (
                                         <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
                                     ))}
@@ -516,3 +516,5 @@ export default function SearchCustomersPage() {
   );
 }
 
+
+    
