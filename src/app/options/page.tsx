@@ -4,9 +4,9 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { FilePlus2, Search, UserPlus, LogOut } from "lucide-react";
-import { signOut } from "firebase/auth"; // Import Firebase signOut
+// Removed Firebase signOut import: import { signOut } from "firebase/auth";
 
-import { auth } from "@/lib/firebase"; // Import Firebase Auth instance
+// Removed Firebase Auth instance import: import { auth } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import useAuth, { AuthLoadingScreen } from '@/hooks/useAuth'; // Import AuthLoadingScreen
@@ -18,14 +18,16 @@ export default function OptionsPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
     try {
-        await signOut(auth);
+        // Clear the session storage flag
+        sessionStorage.removeItem('isLoggedIn');
+        console.log("Session storage cleared: isLoggedIn");
         toast({ title: "Logged Out", description: "You have been successfully logged out." });
-        router.push('/login'); // Redirect to login after sign out
+        router.push('/login'); // Redirect to login after clearing session
     } catch (error) {
-        console.error("Logout Error:", error);
-        toast({ title: "Logout Failed", description: "Could not log out. Please try again.", variant: "destructive"});
+        console.error("Logout Error (Session Storage):", error);
+        toast({ title: "Logout Failed", description: "Could not clear session. Please try again.", variant: "destructive"});
     }
   };
 

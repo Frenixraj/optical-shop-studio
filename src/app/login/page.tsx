@@ -7,9 +7,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
-import { signInWithEmailAndPassword } from "firebase/auth"; // Import Firebase Auth function
+// Removed Firebase Auth import: import { signInWithEmailAndPassword } from "firebase/auth";
 
-import { auth } from "@/lib/firebase"; // Import Firebase Auth instance
+// Removed Firebase Auth instance import: import { auth } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -32,17 +32,16 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import VisionClearLogo from "@/components/icons/VisionClearLogo"; // Import the logo
 
-// Define the Zod schema for validation
+// Define the Zod schema for validation using username
 const loginSchema = z.object({
-  // Use email field as Firebase Auth uses email for login
-  email: z.string().email("Invalid email address").min(1, "Email is required"),
+  username: z.string().min(1, "Username is required"), // Changed from email
   password: z.string().min(1, "Password is required"),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-// Fixed login credentials (replace username with email)
-const FIXED_EMAIL = "visionclear@example.com";
+// Fixed login credentials
+const FIXED_USERNAME = "visionclear";
 const FIXED_PASSWORD = "visionclear@2025";
 
 export default function LoginPage() {
@@ -54,62 +53,46 @@ export default function LoginPage() {
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "", // Default to empty email
+      username: "", // Default to empty username
       password: "",
     },
   });
 
-  const onSubmit = async (data: LoginFormValues) => {
+  const onSubmit = (data: LoginFormValues) => {
     setIsLoading(true);
-    // Use fixed credentials for comparison before attempting Firebase Auth
-    if (data.email !== FIXED_EMAIL || data.password !== FIXED_PASSWORD) {
-       toast({
-        title: "Login Failed",
-        description: "Invalid email or password.",
-        variant: "destructive",
-      });
-      setIsLoading(false);
-      return;
-    }
+    // Simple client-side check for username and password
+    if (data.username === FIXED_USERNAME && data.password === FIXED_PASSWORD) {
+      try {
+        // Set a flag in sessionStorage to indicate login
+        sessionStorage.setItem('isLoggedIn', 'true');
+        console.log("Session storage set: isLoggedIn=true");
 
-    try {
-      // Attempt to sign in with Firebase Authentication
-      await signInWithEmailAndPassword(auth, data.email, data.password);
+        toast({
+          title: "Login Successful",
+          description: "Redirecting to options...",
+        });
+        // Use replace to avoid login page being in history
+        router.replace("/options");
 
-      // Firebase Auth handles session state automatically (via onAuthStateChanged in useAuth hook)
-      toast({
-        title: "Login Successful",
-        description: "Redirecting to options...",
-      });
-      router.push("/options"); // Redirect on successful Firebase login
-
-    } catch (error: any) {
-      console.error("Firebase Login Error:", error);
-      let errorMessage = "An unknown error occurred during login.";
-      // Provide more specific feedback based on Firebase error codes
-      switch (error.code) {
-        case 'auth/invalid-email':
-          errorMessage = "Invalid email format.";
-          break;
-        case 'auth/user-not-found':
-        case 'auth/wrong-password':
-        case 'auth/invalid-credential': // Catch invalid credentials
-           errorMessage = "Invalid email or password.";
-           break;
-        case 'auth/too-many-requests':
-          errorMessage = "Too many login attempts. Please try again later.";
-          break;
-        default:
-          errorMessage = `Login failed: ${error.message}`;
+      } catch (error) {
+         console.error("Error setting session storage:", error);
+         toast({
+           title: "Login Failed",
+           description: "Could not initiate session. Please try again.",
+           variant: "destructive",
+         });
+         setIsLoading(false); // Stop loading on error
       }
+      // No finally needed here as redirection happens on success
+    } else {
       toast({
         title: "Login Failed",
-        description: errorMessage,
+        description: "Invalid username or password.",
         variant: "destructive",
       });
-    } finally {
-      setIsLoading(false);
+      setIsLoading(false); // Stop loading on failure
     }
+    // setIsLoading(false); // Moved inside conditions
   };
 
   const togglePasswordVisibility = () => {
@@ -132,13 +115,12 @@ export default function LoginPage() {
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <FormField
                 control={form.control}
-                name="email" // Changed from username to email
+                name="username" // Changed from email
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel> {/* Changed label */}
+                    <FormLabel>Username</FormLabel> {/* Changed label */}
                     <FormControl>
-                      {/* Placeholder reflects the required email format */}
-                      <Input placeholder={FIXED_EMAIL} {...field} className="text-foreground" type="email" />
+                      <Input placeholder={FIXED_USERNAME} {...field} className="text-foreground" type="text" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -182,7 +164,7 @@ export default function LoginPage() {
           </Form>
         </CardContent>
         <CardFooter className="text-center text-xs text-muted-foreground">
-           <p>Login with email: {FIXED_EMAIL}</p>
+           <p>Login with username: {FIXED_USERNAME}</p>
           &copy; {new Date().getFullYear()} Vision Clear Opticals. All rights reserved.
         </CardFooter>
       </Card>
