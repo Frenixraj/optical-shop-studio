@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from "react";
@@ -5,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
-import { Search, Trash2, Edit, Eye, Download } from "lucide-react";
+import { Search, Trash2, Edit, Eye, Download, Calendar as CalendarIcon, X } from "lucide-react";
+import { format } from "date-fns";
 
 import useAuth from '@/hooks/useAuth';
 import PageWrapper from "@/components/layout/PageWrapper";
@@ -32,8 +34,22 @@ import {
   FormControl,
   FormField,
   FormItem,
+  FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -47,12 +63,20 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton"; // For loading state
-import { findCustomersByPhone, deleteCustomer, getCustomerDetails } from "@/lib/db"; // Placeholder DB functions
-import { exportCustomersToExcel } from "@/lib/excel"; // Placeholder Excel function
+import { findCustomers, deleteCustomer, getCustomerDetails } from "@/lib/db"; // Renamed function
+import { exportCustomersToExcel } from "@/lib/excel";
+import { cn } from "@/lib/utils";
 
 // --- Zod Schema ---
+const currentYear = new Date().getFullYear();
 const searchSchema = z.object({
-  phoneNumber: z.string().min(1, "Phone number is required").regex(/^\d+$/, "Phone number must contain only digits"),
+  phoneNumber: z.string().optional(), // Phone number is now optional
+  searchDate: z.date().optional().nullable(),
+  searchMonth: z.coerce.number().min(1).max(12).optional().nullable(), // Allow clearing
+  searchYear: z.coerce.number().min(1900).max(currentYear + 5).optional().nullable(), // Allow clearing
+}).refine(data => !!data.phoneNumber || !!data.searchDate || (!!data.searchMonth && !!data.searchYear), {
+  message: "Please provide a phone number or select a date, or both month and year.",
+  // Apply this validation at the root level or specific fields if needed
 });
 type SearchFormValues = z.infer<typeof searchSchema>;
 
@@ -61,7 +85,8 @@ interface CustomerResult {
   id: number;
   name: string;
   phone: string;
-  // Potentially add last bill date or other summary info if needed
+  // Add relevant date field if possible from DB query (e.g., firstInvoiceDate)
+  firstInvoiceDate?: Date | string | null;
 }
 
 interface FullCustomerDataForExcel {
@@ -105,6 +130,9 @@ export default function SearchCustomersPage() {
     resolver: zodResolver(searchSchema),
     defaultValues: {
       phoneNumber: "",
+      searchDate: null,
+      searchMonth: null,
+      searchYear: null,
     },
   });
 
@@ -112,10 +140,26 @@ export default function SearchCustomersPage() {
     setIsLoading(true);
     setSearchResults([]); // Clear previous results
     try {
-      const results = await findCustomersByPhone(data.phoneNumber);
+       // Prepare search criteria
+       const criteria: { phone?: string; date?: Date | null; month?: number | null; year?: number | null } = {};
+       if (data.phoneNumber) criteria.phone = data.phoneNumber;
+       if (data.searchDate) criteria.date = data.searchDate;
+       if (data.searchMonth) criteria.month = data.searchMonth;
+       if (data.searchYear) criteria.year = data.searchYear;
+
+      const results = await findCustomers(criteria); // Use the updated function
+
+      // Sort results by firstInvoiceDate if available (newest first)
+       results.sort((a, b) => {
+            const dateA = a.firstInvoiceDate ? new Date(a.firstInvoiceDate).getTime() : 0;
+            const dateB = b.firstInvoiceDate ? new Date(b.firstInvoiceDate).getTime() : 0;
+            return dateB - dateA; // Descending order
+       });
+
+
       setSearchResults(results);
       if (results.length === 0) {
-        toast({ title: "No Results", description: "No customers found with that phone number." });
+        toast({ title: "No Results", description: "No customers found matching the criteria." });
       }
     } catch (error) {
       console.error("Search Error:", error);
@@ -124,6 +168,16 @@ export default function SearchCustomersPage() {
       setIsLoading(false);
     }
   };
+
+   const handleClearFilters = () => {
+        form.reset({
+            phoneNumber: "",
+            searchDate: null,
+            searchMonth: null,
+            searchYear: null,
+        });
+        setSearchResults([]); // Also clear results
+    };
 
   const handleDelete = async (customerId: number) => {
     setIsDeleting(customerId);
@@ -144,7 +198,6 @@ export default function SearchCustomersPage() {
   };
 
    const handleViewDetails = (customerId: number) => {
-    // Navigate to a dedicated view page or open a modal
     router.push(`/view-customer/${customerId}`);
   };
 
@@ -163,16 +216,21 @@ export default function SearchCustomersPage() {
           const excelData: FullCustomerDataForExcel[] = fullDataResults
             .filter((data): data is NonNullable<Awaited<ReturnType<typeof getCustomerDetails>>> => data !== null) // Type guard and filter nulls
             .map(data => {
-                const latestInvoice = data.invoices?.[0]; // Assuming sorted by date desc in DB query
-                const latestTransaction = data.transactions?.[0]; // Assuming sorted by date desc
-                const latestPrescription = data.prescriptions?.[0]; // Assuming sorted
+                // Sort invoices and transactions to get the latest/relevant ones
+                const sortedInvoices = data.invoices?.sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime()) || [];
+                const sortedTransactions = data.transactions?.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()) || [];
+                const sortedPrescriptions = data.prescriptions?.sort((a, b) => new Date(b.prescriptionDate || 0).getTime() - new Date(a.prescriptionDate || 0).getTime()) || [];
+
+                const latestInvoice = sortedInvoices[0];
+                const latestTransaction = sortedTransactions[0];
+                const latestPrescription = sortedPrescriptions[0];
 
                 return {
                     id: data.id,
                     name: data.name,
                     phone: data.phone,
                     billNumber: latestInvoice?.billNumber,
-                    dateTime: latestInvoice?.dateTime, // Could be invoice date or customer add date
+                    dateTime: latestInvoice?.dateTime, // Use latest invoice date as primary date maybe?
                     sph_re: latestPrescription?.sph_re,
                     cyl_re: latestPrescription?.cyl_re,
                     axis_re: latestPrescription?.axis_re,
@@ -206,31 +264,148 @@ export default function SearchCustomersPage() {
   };
 
 
+  // Generate years for dropdown
+  const years = Array.from({ length: currentYear - 1900 + 6 }, (_, i) => currentYear + 5 - i);
+  const months = [
+    { value: 1, label: 'January' }, { value: 2, label: 'February' }, { value: 3, label: 'March' },
+    { value: 4, label: 'April' }, { value: 5, label: 'May' }, { value: 6, label: 'June' },
+    { value: 7, label: 'July' }, { value: 8, label: 'August' }, { value: 9, label: 'September' },
+    { value: 10, label: 'October' }, { value: 11, label: 'November' }, { value: 12, label: 'December' }
+  ];
+
+
   return (
     <PageWrapper title="Search Customers">
       <Card className="mb-8">
         <CardHeader>
-          <CardTitle>Find Customer by Phone</CardTitle>
+          <CardTitle>Find Customer</CardTitle>
+           <CardDescription>Search by phone number, specific date, or month/year.</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col sm:flex-row items-start gap-4">
-              <FormField
-                control={form.control}
-                name="phoneNumber"
-                render={({ field }) => (
-                  <FormItem className="flex-grow w-full">
-                    <FormControl>
-                      <Input type="tel" placeholder="Enter customer phone number..." {...field} className="text-lg"/>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    {/* Phone Number */}
+                    <FormField
+                        control={form.control}
+                        name="phoneNumber"
+                        render={({ field }) => (
+                        <FormItem className="md:col-span-2">
+                             <FormLabel>Phone Number (Optional)</FormLabel>
+                            <FormControl>
+                            <Input type="tel" placeholder="Enter customer phone number..." {...field} />
+                            </FormControl>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                     {/* Specific Date */}
+                     <FormField
+                        control={form.control}
+                        name="searchDate"
+                        render={({ field }) => (
+                        <FormItem className="flex flex-col md:col-span-1">
+                             <FormLabel>Specific Date (Optional)</FormLabel>
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                <FormControl>
+                                    <Button
+                                    variant={"outline"}
+                                    className={cn(
+                                        "pl-3 text-left font-normal",
+                                        !field.value && "text-muted-foreground"
+                                    )}
+                                    >
+                                    {field.value ? (
+                                        format(field.value, "PPP")
+                                    ) : (
+                                        <span>Pick a date</span>
+                                    )}
+                                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                    </Button>
+                                </FormControl>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                    mode="single"
+                                    selected={field.value}
+                                    onSelect={field.onChange}
+                                    disabled={(date) =>
+                                    date > new Date() || date < new Date("1900-01-01")
+                                    }
+                                    initialFocus
+                                />
+                                </PopoverContent>
+                            </Popover>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                    <div></div> {/* Spacer */}
+
+                    {/* Month */}
+                     <FormField
+                        control={form.control}
+                        name="searchMonth"
+                        render={({ field }) => (
+                        <FormItem className="md:col-span-1">
+                             <FormLabel>Month (Optional)</FormLabel>
+                            <Select onValueChange={(value) => field.onChange(value ? parseInt(value) : null)} value={field.value?.toString() ?? ""}>
+                                <FormControl>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select Month" />
+                                </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                     <SelectItem value="">-- Select Month --</SelectItem>
+                                    {months.map(m => (
+                                        <SelectItem key={m.value} value={m.value.toString()}>{m.label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                    {/* Year */}
+                    <FormField
+                        control={form.control}
+                        name="searchYear"
+                        render={({ field }) => (
+                        <FormItem className="md:col-span-1">
+                             <FormLabel>Year (Required with Month)</FormLabel>
+                            <Select onValueChange={(value) => field.onChange(value ? parseInt(value) : null)} value={field.value?.toString() ?? ""}>
+                                <FormControl>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select Year" />
+                                </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                    <SelectItem value="">-- Select Year --</SelectItem>
+                                    {years.map(y => (
+                                        <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <FormMessage />
+                        </FormItem>
+                        )}
+                    />
+                    {/* Search and Clear Buttons */}
+                    <div className="flex items-end gap-2 md:col-span-2">
+                        <Button type="submit" disabled={isLoading} className="flex-grow sm:flex-grow-0">
+                            <Search className="mr-2 h-5 w-5" />
+                            {isLoading ? "Searching..." : "Search"}
+                        </Button>
+                         <Button type="button" variant="outline" onClick={handleClearFilters} disabled={isLoading}>
+                            <X className="mr-2 h-4 w-4" /> Clear
+                        </Button>
+                    </div>
+                 </div>
+                  {/* Display root level errors */}
+                 {form.formState.errors.root && (
+                    <p className="text-sm font-medium text-destructive">{form.formState.errors.root.message}</p>
                 )}
-              />
-              <Button type="submit" disabled={isLoading} className="w-full sm:w-auto">
-                <Search className="mr-2 h-5 w-5" />
-                {isLoading ? "Searching..." : "Search"}
-              </Button>
             </form>
           </Form>
         </CardContent>
@@ -254,7 +429,7 @@ export default function SearchCustomersPage() {
       {!isLoading && searchResults.length > 0 && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Search Results</CardTitle>
+            <CardTitle>Search Results ({searchResults.length})</CardTitle>
              <Button
                   variant="outline"
                   size="sm"
@@ -272,6 +447,7 @@ export default function SearchCustomersPage() {
                   <TableHead>ID</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Phone Number</TableHead>
+                  <TableHead>First Invoice Date</TableHead> {/* Added Date Column */}
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -281,16 +457,22 @@ export default function SearchCustomersPage() {
                     <TableCell>{customer.id}</TableCell>
                     <TableCell className="font-medium">{customer.name}</TableCell>
                     <TableCell>{customer.phone}</TableCell>
-                    <TableCell className="text-right space-x-2">
-                       <Button variant="ghost" size="icon" onClick={() => handleViewDetails(customer.id)} className="text-blue-600 hover:text-blue-800" title="View Details">
+                     <TableCell>
+                        {customer.firstInvoiceDate
+                            ? format(new Date(customer.firstInvoiceDate), "PPP")
+                            : 'N/A'
+                        }
+                    </TableCell>
+                    <TableCell className="text-right space-x-1">
+                       <Button variant="ghost" size="icon" onClick={() => handleViewDetails(customer.id)} className="text-blue-600 hover:text-blue-800 h-8 w-8" title="View Details">
                            <Eye className="h-4 w-4" />
                        </Button>
-                       <Button variant="ghost" size="icon" onClick={() => handleEdit(customer.id)} className="text-yellow-600 hover:text-yellow-800" title="Edit Customer">
+                       <Button variant="ghost" size="icon" onClick={() => handleEdit(customer.id)} className="text-yellow-600 hover:text-yellow-800 h-8 w-8" title="Edit Customer">
                            <Edit className="h-4 w-4" />
                        </Button>
                        <AlertDialog>
                           <AlertDialogTrigger asChild>
-                             <Button variant="ghost" size="icon" disabled={isDeleting === customer.id} className="text-destructive hover:bg-destructive/10" title="Delete Customer">
+                             <Button variant="ghost" size="icon" disabled={isDeleting === customer.id} className="text-destructive hover:bg-destructive/10 h-8 w-8" title="Delete Customer">
                                 {isDeleting === customer.id ? <Trash2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                               </Button>
                           </AlertDialogTrigger>
@@ -318,19 +500,19 @@ export default function SearchCustomersPage() {
                   </TableRow>
                 ))}
               </TableBody>
-               <TableCaption>Found {searchResults.length} customer(s).</TableCaption>
             </Table>
           </CardContent>
         </Card>
       )}
 
-      {!isLoading && searchResults.length === 0 && form.formState.isSubmitted && (
+      {!isLoading && form.formState.isSubmitted && searchResults.length === 0 && (
          <Card>
             <CardContent className="pt-6 text-center text-muted-foreground">
-                No customers found matching the provided phone number.
+                No customers found matching the specified criteria.
             </CardContent>
          </Card>
       )}
     </PageWrapper>
   );
 }
+
